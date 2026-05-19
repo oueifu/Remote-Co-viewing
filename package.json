@@ -1,0 +1,18 @@
+{
+  "name": "remote-sync-movie",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A tiny cross-platform local-file movie sync player for two remote viewers.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "mpv": "node mpv-client.js",
+    "check": "node --check server.js && node --check mpv-client.js && node --check public/app.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

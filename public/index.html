@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>远程同步看片</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <section class="player-shell">
+        <div class="video-wrap">
+          <video id="video" controls playsinline preload="metadata"></video>
+          <div id="emptyState" class="empty-state">
+            <strong>选择本地电影文件</strong>
+            <span>视频只在本机播放，不会上传到服务器。</span>
+          </div>
+        </div>
+
+        <div class="toolbar" aria-label="播放控制">
+          <button id="togglePlay" class="icon-button" type="button" title="播放/暂停" aria-label="播放/暂停">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path id="playIcon" d="M8 5v14l11-7z"></path>
+              <path id="pauseIcon" class="hidden" d="M7 5h4v14H7zm6 0h4v14h-4z"></path>
+            </svg>
+          </button>
+          <button id="syncNow" class="icon-button" type="button" title="立即对齐" aria-label="立即对齐">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6a6 6 0 0 1-2.21 4.65l1.42 1.42A7.98 7.98 0 0 0 20 12c0-4.42-3.58-8-8-8zm-6 8a6 6 0 0 1 2.21-4.65L6.79 5.93A7.98 7.98 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3c-3.31 0-6-2.69-6-6z"></path>
+            </svg>
+          </button>
+          <div class="time-readout">
+            <span id="currentTime">00:00</span>
+            <span>/</span>
+            <span id="duration">00:00</span>
+          </div>
+          <div id="status" class="status status-offline">未连接</div>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <form id="joinForm" class="connection-form">
+          <label>
+            <span>服务器</span>
+            <input id="serverUrl" name="serverUrl" autocomplete="off">
+          </label>
+          <label>
+            <span>房间</span>
+            <input id="room" name="room" value="movie-room" autocomplete="off">
+          </label>
+          <label>
+            <span>昵称</span>
+            <input id="name" name="name" autocomplete="off">
+          </label>
+          <button id="connectButton" class="primary-button" type="submit">连接</button>
+        </form>
+
+        <label class="file-picker">
+          <span>本地电影</span>
+          <input id="fileInput" type="file" accept="video/*,.mkv,.avi,.rmvb,.flv,.mov,.mp4,.webm,.m4v">
+        </label>
+
+        <div class="section">
+          <h2>房间成员</h2>
+          <ul id="clients" class="clients"></ul>
+        </div>
+
+        <div class="section">
+          <h2>连接记录</h2>
+          <ol id="log" class="log"></ol>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
