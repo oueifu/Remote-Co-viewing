@@ -5,4 +5,7 @@ yarn-error.log*
 package-lock.json
 yarn.lock
 .DS_Store
+Thumbs.db
+server.err
+server.log
 .env
