@@ -1,77 +1,137 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>远程同步看片</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer" />
+    <title>SyncCinema - 异地同步观影</title>
     <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body>
-    <main class="app">
-      <section class="player-shell">
-        <div class="video-wrap">
-          <video id="video" controls playsinline preload="metadata"></video>
-          <div id="emptyState" class="empty-state">
-            <strong>选择本地电影文件</strong>
-            <span>视频只在本机播放，不会上传到服务器。</span>
-          </div>
+    <script src="https://cdn.jsdelivr.net/npm/danmaku/dist/danmaku.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="video-container">
+                <video id="video-player" playsinline></video>
+                <div id="danmaku-stage" class="danmaku-stage"></div>
+                <div id="video-placeholder" class="video-placeholder">
+                    <div class="placeholder-art" aria-hidden="true">
+                        <div class="poster-frame poster-frame-primary"></div>
+                        <div class="poster-frame poster-frame-secondary"></div>
+                        <div class="poster-frame poster-frame-tertiary"></div>
+                    </div>
+                    <div class="placeholder-card">
+                        <div class="movie-art">🎬</div>
+                        <div id="current-video-title" class="movie-title-overlay">选择本地电影或粘贴网络视频</div>
+                        <div id="sync-status" class="sync-status-badge">等待加入房间...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="controls-bar">
+                <div id="progress-container" class="progress-container">
+                    <div id="progress-bar" class="progress-bar">
+                        <div class="progress-handle"></div>
+                    </div>
+                </div>
+                <div class="controls-row">
+                    <div class="left-controls">
+                        <button id="play-pause-btn" type="button" class="btn btn-primary">▶ 播放</button>
+                        <span id="time-display" class="time-display">00:00 / 00:00</span>
+                    </div>
+                    <div class="right-controls">
+                        <div class="playback-status">
+                            <div class="audio-wave" aria-hidden="true">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                            <span id="audio-status-text">🔊 已解锁音频</span>
+                            <span id="fullscreen-status" class="fullscreen-status">● 窗口模式</span>
+                        </div>
+                        <div class="volume-control">
+                            <button id="mute-btn" type="button" class="btn icon-btn" title="静音/取消静音" aria-label="静音或取消静音">🔊</button>
+                            <input id="volume-slider" class="volume-slider" type="range" min="0" max="100" step="1" value="70" aria-label="音量">
+                        </div>
+                        <button id="fullscreen-btn" type="button" class="btn" title="全屏观影">⛶ 全屏</button>
+                        <button id="danmaku-toggle-btn" type="button" class="btn icon-btn" title="显示/隐藏弹幕（D）" aria-label="显示或隐藏弹幕">👁</button>
+                        <button id="syncNow" type="button" class="btn">对齐</button>
+                        <span id="room-connection-indicator" class="time-display" style="color: #ef4444;">● 未连接</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="toolbar" aria-label="播放控制">
-          <button id="togglePlay" class="icon-button" type="button" title="播放/暂停" aria-label="播放/暂停">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path id="playIcon" d="M8 5v14l11-7z"></path>
-              <path id="pauseIcon" class="hidden" d="M7 5h4v14H7zm6 0h4v14h-4z"></path>
-            </svg>
-          </button>
-          <button id="syncNow" class="icon-button" type="button" title="立即对齐" aria-label="立即对齐">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6a6 6 0 0 1-2.21 4.65l1.42 1.42A7.98 7.98 0 0 0 20 12c0-4.42-3.58-8-8-8zm-6 8a6 6 0 0 1 2.21-4.65L6.79 5.93A7.98 7.98 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3c-3.31 0-6-2.69-6-6z"></path>
-            </svg>
-          </button>
-          <div class="time-readout">
-            <span id="currentTime">00:00</span>
-            <span>/</span>
-            <span id="duration">00:00</span>
-          </div>
-          <div id="status" class="status status-offline">未连接</div>
+        <div class="sidebar">
+            <div class="voice-panel glass-card">
+                <div class="video-avatar video-avatar-local">
+                    <video id="local-video" autoplay playsinline muted></video>
+                    <span id="local-call-label" class="video-avatar-label">我</span>
+                </div>
+                <div class="video-avatar video-avatar-remote">
+                    <video id="remote-video" autoplay playsinline></video>
+                    <span id="remote-call-label" class="video-avatar-label">对方</span>
+                </div>
+                <div class="call-actions">
+                    <button id="call-btn" type="button" class="btn call-btn">📞 连麦</button>
+                    <button id="mic-toggle-btn" type="button" class="btn icon-btn" title="麦克风" aria-label="开关麦克风">🎙</button>
+                    <button id="camera-toggle-btn" type="button" class="btn icon-btn" title="摄像头" aria-label="开关摄像头">📷</button>
+                </div>
+            </div>
+
+            <div class="room-header glass-card">
+                <div class="section-title">房间与配置</div>
+                <div class="input-row-group">
+                    <input type="text" id="room-input" class="custom-input" placeholder="房间名" value="movie-room">
+                    <input type="text" id="name-input" class="custom-input" placeholder="昵称" value="用户">
+                </div>
+                <div class="input-row-group">
+                    <input type="text" id="server-input" class="custom-input" placeholder="服务器地址">
+                    <button id="connect-btn" type="button" class="btn btn-primary">连接</button>
+                </div>
+                <button id="invite-btn" type="button" class="invite-link-box">
+                    <span id="invite-text" class="invite-text">等待生成邀请链接...</span>
+                    <span class="invite-copy">复制</span>
+                </button>
+            </div>
+
+            <div class="glass-card">
+                <div class="section-title">网络视频</div>
+                <div class="input-row-group">
+                    <input type="text" id="network-url-input" class="custom-input" placeholder="粘贴网络链接或 B 站分享链接...">
+                    <button id="load-url-btn" type="button" class="btn">加载</button>
+                </div>
+                <p class="hint">支持直链或 B 站分享链接自动解析最高画质。</p>
+                <p class="hint">若自动解析超时，请使用油猴脚本或浏览器插件复制 B 站真实 MP4/m3u8 直链，直接粘贴到上方加载。</p>
+            </div>
+
+            <div class="glass-card">
+                <div class="section-title">本地电影</div>
+                <input type="file" id="local-file-input" accept="video/*,.mkv,.avi,.rmvb,.flv,.mov,.mp4,.webm,.m4v" style="display:none;">
+                <button id="choose-local-btn" type="button" class="btn wide-btn">📁 选择本地电影文件</button>
+            </div>
+
+            <div class="glass-card">
+                <div class="section-title">房间成员</div>
+                <div id="member-list" class="member-list">暂无成员</div>
+            </div>
+
+            <div class="chat-section glass-card">
+                <div class="section-title">聊天室</div>
+                <div id="chat-messages" class="chat-messages"></div>
+                <form id="chat-form" class="input-row-group">
+                    <input type="text" id="chat-input" class="custom-input" placeholder="发条弹幕/消息吧..." autocomplete="off">
+                    <button type="submit" class="btn btn-primary">发送</button>
+                </form>
+            </div>
+
+            <div class="log-section glass-card">
+                <div class="section-title">连接记录</div>
+                <div id="log-box" class="log-box"></div>
+            </div>
         </div>
-      </section>
-
-      <aside class="side-panel">
-        <form id="joinForm" class="connection-form">
-          <label>
-            <span>服务器</span>
-            <input id="serverUrl" name="serverUrl" autocomplete="off">
-          </label>
-          <label>
-            <span>房间</span>
-            <input id="room" name="room" value="movie-room" autocomplete="off">
-          </label>
-          <label>
-            <span>昵称</span>
-            <input id="name" name="name" autocomplete="off">
-          </label>
-          <button id="connectButton" class="primary-button" type="submit">连接</button>
-        </form>
-
-        <label class="file-picker">
-          <span>本地电影</span>
-          <input id="fileInput" type="file" accept="video/*,.mkv,.avi,.rmvb,.flv,.mov,.mp4,.webm,.m4v">
-        </label>
-
-        <div class="section">
-          <h2>房间成员</h2>
-          <ul id="clients" class="clients"></ul>
-        </div>
-
-        <div class="section">
-          <h2>连接记录</h2>
-          <ol id="log" class="log"></ol>
-        </div>
-      </aside>
-    </main>
+    </div>
 
     <script src="/app.js"></script>
-  </body>
+</body>
 </html>
