@@ -9,3 +9,5 @@ Thumbs.db
 server.err
 server.log
 .env
+.ml-cache/
+.mainline/local.toml
