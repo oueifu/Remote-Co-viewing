@@ -9,6 +9,32 @@
     <script src="https://cdn.jsdelivr.net/npm/danmaku/dist/danmaku.min.js"></script>
 </head>
 <body>
+    <button id="help-btn" type="button" class="btn icon-btn" data-i18n="help" title="使用说明" style="position:fixed;right:16px;bottom:16px;z-index:1000;font-size:20px;border-radius:50%;width:40px;height:40px;background:#111827;color:#fff;display:flex;align-items:center;justify-content:center;padding:0;">❓</button>
+    <button id="sponsor-btn" type="button" class="btn icon-btn" data-i18n="sponsor" title="支持开发者" style="position:fixed;right:64px;bottom:16px;z-index:1000;font-size:20px;border-radius:50%;width:40px;height:40px;background:#fb7299;color:#fff;display:flex;align-items:center;justify-content:center;padding:0;">☕</button>
+    <button id="devtools-btn" type="button" class="btn icon-btn" title="开发者工具" style="display:none;position:fixed;right:112px;bottom:16px;z-index:1000;font-size:20px;border-radius:50%;width:40px;height:40px;background:#4b5563;color:#fff;align-items:center;justify-content:center;padding:0;">⚙</button>
+    <div id="guide-modal" style="display:none;position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,.72);padding:24px;">
+        <div style="max-width:680px;margin:8vh auto;background:#111827;color:#fff;padding:28px 32px;border-radius:20px;box-shadow:0 24px 80px rgba(0,0,0,.35);">
+            <h3 data-i18n="guide_title" style="margin:0 0 18px;font-size:20px;line-height:1.2;">使用说明</h3>
+            <div style="display:grid;gap:14px;margin-bottom:24px;font-size:16px;line-height:1.75;color:#e5e7eb;word-break:keep-all;white-space:normal;">
+                <div data-i18n="guide_step_1">1. 第一个进入房间的人会成为管理员，之后的加入需要管理员同意。</div>
+                <div data-i18n="guide_step_2">2. 首次打开会自动生成随机房间号；只有通过分享链接或手动输入相同房间号，才会进入同一个房间。</div>
+                <div data-i18n="guide_step_3">3. 粘贴视频地址并点击加载，或双方各自选择同一个本地文件；当前每个房间最多 2 人，并支持聊天、同步播放和连麦。</div>
+            </div>
+            <button id="guide-close-btn" type="button" class="btn btn-primary" data-i18n="guide_close" style="min-width:120px;">我知道了</button>
+        </div>
+    </div>
+    <div id="sponsor-modal" style="display:none;position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,.72);padding:24px;">
+        <div style="max-width:320px;margin:15vh auto;background:#111827;color:#fff;padding:24px;border-radius:16px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.5);">
+            <h3 style="margin-top:0;color:#f3f4f6;" data-i18n="sponsor_title">支持开发者 ☕</h3>
+            <p style="font-size:14px;color:#9ca3af;margin-bottom:20px;line-height:1.5;" data-i18n="sponsor_desc">如果这个小插件让你和朋友度过了愉快的时光，欢迎请我喝杯咖啡！你的支持将用于维持服务器的运转。</p>
+            <div style="background:#fff;padding:12px;border-radius:12px;display:inline-block;">
+                <img src="/reward.png" alt="微信赞赏码" style="width:200px;height:auto;display:block;">
+            </div>
+            <div style="text-align:center;margin-top:24px;">
+                <button id="sponsor-close-btn" type="button" class="btn" data-i18n="close">关闭</button>
+            </div>
+        </div>
+    </div>
     <div class="app-container">
         <div class="main-content">
             <div class="video-container">
@@ -22,8 +48,8 @@
                     </div>
                     <div class="placeholder-card">
                         <div class="movie-art">🎬</div>
-                        <div id="current-video-title" class="movie-title-overlay">选择本地电影或粘贴网络视频</div>
-                        <div id="sync-status" class="sync-status-badge">等待加入房间...</div>
+                        <div id="current-video-title" class="movie-title-overlay" data-i18n="video_placeholder">选择本地电影或粘贴网络视频</div>
+                        <div id="sync-status" class="sync-status-badge" data-i18n="sync_waiting">等待加入房间...</div>
                     </div>
                 </div>
             </div>
@@ -35,7 +61,7 @@
                 </div>
                 <div class="controls-row">
                     <div class="left-controls">
-                        <button id="play-pause-btn" type="button" class="btn btn-primary">▶ 播放</button>
+                        <button id="play-pause-btn" type="button" class="btn btn-primary" data-i18n="play">▶ 播放</button>
                         <span id="time-display" class="time-display">00:00 / 00:00</span>
                     </div>
                     <div class="right-controls">
@@ -53,10 +79,10 @@
                             <button id="mute-btn" type="button" class="btn icon-btn" title="静音/取消静音" aria-label="静音或取消静音">🔊</button>
                             <input id="volume-slider" class="volume-slider" type="range" min="0" max="100" step="1" value="70" aria-label="音量">
                         </div>
-                        <button id="fullscreen-btn" type="button" class="btn" title="全屏观影">⛶ 全屏</button>
+                        <button id="fullscreen-btn" type="button" class="btn" title="全屏观影" data-i18n="fullscreen">⛶ 全屏</button>
                         <button id="danmaku-toggle-btn" type="button" class="btn icon-btn" title="显示/隐藏弹幕（D）" aria-label="显示或隐藏弹幕">👁</button>
-                        <button id="syncNow" type="button" class="btn">对齐</button>
-                        <span id="room-connection-indicator" class="time-display" style="color: #ef4444;">● 未连接</span>
+                        <button id="syncNow" type="button" class="btn" data-i18n="sync_now">对齐</button>
+                        <span id="room-connection-indicator" class="time-display" style="color: #ef4444;" data-i18n="status_offline">● 未连接</span>
                     </div>
                 </div>
             </div>
@@ -73,60 +99,67 @@
                     <span id="remote-call-label" class="video-avatar-label">对方</span>
                 </div>
                 <div class="call-actions">
-                    <button id="call-btn" type="button" class="btn call-btn">📞 连麦</button>
+                    <button id="call-btn" type="button" class="btn call-btn" data-i18n="call">📞 连麦</button>
                     <button id="mic-toggle-btn" type="button" class="btn icon-btn" title="麦克风" aria-label="开关麦克风">🎙</button>
                     <button id="camera-toggle-btn" type="button" class="btn icon-btn" title="摄像头" aria-label="开关摄像头">📷</button>
                 </div>
             </div>
 
             <div class="room-header glass-card">
-                <div class="section-title">房间与配置</div>
+                <div class="section-title" data-i18n="room_settings">房间与配置</div>
                 <div class="input-row-group">
                     <input type="text" id="room-input" class="custom-input" placeholder="房间名" value="movie-room">
                     <input type="text" id="name-input" class="custom-input" placeholder="昵称" value="用户">
                 </div>
                 <div class="input-row-group">
                     <input type="text" id="server-input" class="custom-input" placeholder="服务器地址">
-                    <button id="connect-btn" type="button" class="btn btn-primary">连接</button>
+                    <button id="connect-btn" type="button" class="btn btn-primary" data-i18n="connect">连接</button>
+                </div>
+                <div class="input-row-group">
+                    <select id="lang-switch" class="custom-input" aria-label="Language">
+                        <option value="zh">中文</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語</option>
+                    </select>
                 </div>
                 <button id="invite-btn" type="button" class="invite-link-box">
                     <span id="invite-text" class="invite-text">等待生成邀请链接...</span>
-                    <span class="invite-copy">复制</span>
+                    <span class="invite-copy" data-i18n="copy">复制</span>
                 </button>
             </div>
 
             <div class="glass-card">
-                <div class="section-title">网络视频</div>
+                <div class="section-title" data-i18n="network_video">网络视频</div>
                 <div class="input-row-group">
                     <input type="text" id="network-url-input" class="custom-input" placeholder="粘贴网络链接或 B 站分享链接...">
-                    <button id="load-url-btn" type="button" class="btn">加载</button>
+                    <button id="load-url-btn" type="button" class="btn" data-i18n="load">加载</button>
                 </div>
-                <p class="hint">支持直链或 B 站分享链接自动解析最高画质。</p>
+                <p class="hint" data-i18n="network_hint">支持直链或 B 站分享链接自动解析最高画质。</p>
                 <p class="hint">若自动解析超时，请使用油猴脚本或浏览器插件复制 B 站真实 MP4/m3u8 直链，直接粘贴到上方加载。</p>
             </div>
 
             <div class="glass-card">
-                <div class="section-title">本地电影</div>
+                <div class="section-title" data-i18n="local_video">本地电影</div>
                 <input type="file" id="local-file-input" accept="video/*,.mkv,.avi,.rmvb,.flv,.mov,.mp4,.webm,.m4v" style="display:none;">
-                <button id="choose-local-btn" type="button" class="btn wide-btn">📁 选择本地电影文件</button>
+                <button id="choose-local-btn" type="button" class="btn wide-btn" data-i18n="choose_local">📁 选择本地电影文件</button>
             </div>
 
             <div class="glass-card">
-                <div class="section-title">房间成员</div>
-                <div id="member-list" class="member-list">暂无成员</div>
+                <div class="section-title" data-i18n="room_members">房间成员</div>
+                <div id="member-list" class="member-list" data-i18n="no_members">暂无成员</div>
             </div>
 
             <div class="chat-section glass-card">
-                <div class="section-title">聊天室</div>
+                <div class="section-title" data-i18n="chatroom">聊天室</div>
                 <div id="chat-messages" class="chat-messages"></div>
                 <form id="chat-form" class="input-row-group">
                     <input type="text" id="chat-input" class="custom-input" placeholder="发条弹幕/消息吧..." autocomplete="off">
-                    <button type="submit" class="btn btn-primary">发送</button>
+                    <button type="submit" class="btn btn-primary" data-i18n="send">发送</button>
                 </form>
             </div>
 
             <div class="log-section glass-card">
-                <div class="section-title">连接记录</div>
+                <div class="section-title" data-i18n="connection_log">连接记录</div>
                 <div id="log-box" class="log-box"></div>
             </div>
         </div>

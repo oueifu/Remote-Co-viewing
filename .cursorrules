@@ -1,0 +1,37 @@
+# Role & Global Context
+You are an expert developer working on a multi-client synchronization project ("Remote Co-viewing").
+This project uses `mainline` for architectural memory.
+ALWAYS run `mainline context --current` in the terminal to read historical decisions before modifying the codebase.
+
+# CRITICAL: `public/app.js` Modification Checklist
+`public/app.js` is a massive monolith containing 9 highly coupled layers. Before writing ANY code in this file, you MUST identify which layer your task belongs to and STRICTLY follow its constraints:
+
+1. Startup & Config (`room`, `ice`, `localStorage`)
+   - CONSTRAINT: Do not mix config logic with protocol logic. Changing URL parameters here breaks the `start.bat` integration.
+
+2. Invite & Host Token (`host token`, `cachedPublicUrl`)
+   - CONSTRAINT: The host token is the sole authority credential. It is NOT standard UI state. Do not modify its generation without checking `server.js` review logic.
+
+3. Video Source Loading (`executeLoadVideo`, `currentVideoSignature`)
+   - CONSTRAINT: Loading a video and synchronizing playback are TWO SEPARATE logic chains. NEVER merge them. Local files must NEVER be auto-shared.
+
+4. WebSocket Protocol (`connect`, `handleMessage`)
+   - CONSTRAINT: This is the shared protocol surface for `server.js` and `mpv-client.js`. DO NOT change event names or field structures without parallel updates to the other files.
+
+5. Playback Sync (`applyRemoteState`, `sendControl`)
+   - CONSTRAINT: `state` is a server-authoritative snapshot, NOT a command. DO NOT alter the semantic meaning of `paused`, `time`, `rate`, or `serverTime`. This is the most critical area for `mpv` compatibility.
+
+6. Danmaku & Bilibili (`cid`, XML parsing)
+   - CONSTRAINT: Extremely fragile. Tied to server-side `/api/bilibili-danmaku`. Do not touch the parsing, `cid` flow, or proxy logic unless explicitly requested.
+
+7. Chat & Member UI
+   - CONSTRAINT: Chat messages also render as private Danmaku. Differentiate strictly between system messages and user messages.
+
+8. Fullscreen & UI Interactive (Controls autohide, Chat drawer)
+   - CONSTRAINT: Pure presentation layer. If your UI fix requires calling `sendControl()` or accessing `lastRemoteState`, your approach is violating architectural boundaries.
+
+9. WebRTC (Audio/Mic connect)
+   - CONSTRAINT: WebRTC is STRICTLY for voice comms (连麦). NEVER attempt to route video files or playback state through RTCPeerConnection.
+
+# Post-Task Action
+If you successfully modify `app.js` while respecting these boundaries, summarize your changes and run `mainline append "<summary of changes and which layer was touched>"` to document the effort.

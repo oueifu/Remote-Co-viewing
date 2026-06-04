@@ -4,10 +4,17 @@
   "private": true,
   "description": "A tiny cross-platform local-file movie sync player for two remote viewers.",
   "main": "server.js",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "node server.js",
     "mpv": "node mpv-client.js",
-    "check": "node --check server.js && node --check mpv-client.js && node --check public/app.js"
+    "check": "node --check server.js && node --check mpv-client.js && node --check public/app.js && node --check electron/main.js && node --check electron/preload.js",
+    "desktop:dev": "electron electron/main.js",
+    "desktop:check": "node --check electron/main.js && node --check electron/preload.js",
+    "pack:zip": "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force dist | Out-Null; Compress-Archive -Path manifest.json,dnr-rules.json,content.js,public -DestinationPath dist\\extension.zip -Force\"",
+    "tunnel:ngrok": "npx concurrently \"npm start\" \"ngrok http 5050\"",
+    "tunnel:cpolar": "npx concurrently \"npm start\" \"cpolar http 5050\"",
+    "tunnel:cloudflared": "npx concurrently \"npm start\" \"cloudflared tunnel --url http://127.0.0.1:5050\""
   },
   "dependencies": {
     "axios": "^1.7.0",
@@ -15,5 +22,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "electron": "26.6.10"
   }
 }

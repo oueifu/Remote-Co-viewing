@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Remote Sync Movie Helper",
+  "version": "1.0.0",
+  "description": "Extract Bilibili direct video URLs and rewrite request headers for playback.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "https://www.bilibili.com/*",
+    "https://*.bilibili.com/*",
+    "https://b23.tv/*",
+    "https://*.bilivideo.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/video/*",
+        "https://www.bilibili.com/bangumi/play/*",
+        "https://*.bilibili.com/video/*",
+        "https://b23.tv/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "bili-referer-rules",
+        "enabled": true,
+        "path": "dnr-rules.json"
+      }
+    ]
+  }
+}

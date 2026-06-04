@@ -831,6 +831,23 @@ video {
     transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
 }
 
+select.custom-input {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+    padding-right: 36px;
+    cursor: pointer;
+}
+
+select.custom-input option {
+    background-color: #111827;
+    color: #f3f4f6;
+    padding: 10px;
+}
+
 .custom-input::placeholder {
     color: rgba(203, 213, 225, 0.52);
 }
@@ -1166,4 +1183,68 @@ video {
     display: flex;
     flex-direction: column;
     border-top: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+/* ─── External Player Controller Mode ───────────────────────────────────── */
+/* Applied when body.mpv-controller-mode is set by JS after entering mpv sync */
+
+body.mpv-controller-mode {
+    align-items: center;
+    justify-content: center;
+}
+
+body.mpv-controller-mode .app-container {
+    width: min(100%, 520px);
+    height: auto;
+    min-height: 0;
+    flex-direction: column;
+}
+
+body.mpv-controller-mode .sidebar {
+    display: none;
+}
+
+/* Collapse the video area — mpv renders in its own OS window */
+body.mpv-controller-mode .video-container {
+    flex: 0 0 0;
+    height: 0;
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Pull controls-bar out of absolute flow so it's visible with zero-height parent */
+body.mpv-controller-mode .main-content {
+    position: relative;
+    min-height: 0;
+    overflow: visible;
+}
+
+body.mpv-controller-mode .controls-bar {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin: 0;
+    border-radius: 0 0 8px 8px;
+    border-top: 1px solid var(--line-soft);
+}
+
+/* Compact the placeholder card that appears inside the collapsed video area */
+body.mpv-controller-mode .video-placeholder {
+    display: none;
+}
+
+/* Show a slim status bar above the controls when in controller mode */
+body.mpv-controller-mode .controls-bar::before {
+    content: "🎬 外部播放器同步中";
+    display: block;
+    width: 100%;
+    padding: 4px 0 8px;
+    color: var(--violet);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: center;
+    border-bottom: 1px solid var(--line-soft);
+    margin-bottom: 6px;
 }

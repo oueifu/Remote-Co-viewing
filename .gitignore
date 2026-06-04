@@ -11,3 +11,7 @@ server.log
 .env
 .ml-cache/
 .mainline/local.toml
+dist/
+release/
+*.exe
+*.log
