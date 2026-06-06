@@ -779,18 +779,18 @@ function updateMpvModeUi() {
 }
 
 function buildDefaultWsUrl() {
-  return "wss://co-viewing.onrender.com/ws";
+  return "wss://remote-co-viewing.onrender.com/ws";
 }
 
 function buildDefaultPublicWebUrl() {
-  return "https://co-viewing.onrender.com";
+  return "https://remote-co-viewing.onrender.com";
 }
 
 // Check if the current server is the default public server to toggle warnings
 function updateServerWarning() {
   if (!serverBetaWarning) return;
   const currentServer = serverUrlInput?.value.trim() || "";
-  const isDefaultPublicServer = currentServer.includes("co-viewing.onrender.com");
+  const isDefaultPublicServer = currentServer.includes("remote-co-viewing.onrender.com");
   serverBetaWarning.style.display = isDefaultPublicServer ? "block" : "none";
 }
 
