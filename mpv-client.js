@@ -91,7 +91,7 @@ function connectIpcWithRetry(remaining) {
   ipc = net.createConnection(ipcPath);
 
   ipc.on("connect", () => {
-    console.log("已连�?mpv IPC");
+    console.log("已连接 mpv IPC");
     ipcReady = true;
     observeMpv();
     announceFile();
@@ -120,7 +120,7 @@ function connectIpcWithRetry(remaining) {
     ipcReady = false;
     ipc.destroy();
     if (remaining <= 0) {
-      console.error("无法连接 mpv IPC，请确认 mpv 已安装并可在命令行运行�?);
+      console.error("无法连接 mpv IPC，请确认 mpv 已安装并可在命令行运行。");
       shutdown();
       return;
     }
@@ -153,7 +153,7 @@ function connectServer() {
 
   ws.on("close", () => {
     joined = false;
-    console.log("服务器连接已断开�?.5 秒后重连");
+    console.log("服务器连接已断开，2.5 秒后重连");
     setTimeout(connectServer, 2500);
   });
 
@@ -184,12 +184,12 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "load_video") {
-    loadRemoteMedia(message.url, message.title || "网络视频�?);
+    loadRemoteMedia(message.url, message.title || "网络视频");
     return;
   }
 
   if (message.type === "error") {
-    console.error(message.message || "服务器错�?);
+    console.error(message.message || "服务器错误");
   }
 }
 
@@ -280,7 +280,7 @@ function announceFile(duration = null) {
   });
 }
 
-function loadRemoteMedia(url, title = "网络视频�?) {
+function loadRemoteMedia(url, title = "网络视频") {
   const targetUrl = String(url || "").trim();
   if (!targetUrl || currentLoadedUrl === targetUrl) return;
   if (!ipcReady || !ipc || ipc.destroyed) {
@@ -288,15 +288,15 @@ function loadRemoteMedia(url, title = "网络视频�?) {
     return;
   }
   currentLoadedUrl = targetUrl;
-  console.log(`加载远程视频�?{title}`);
+  console.log(`加载远程视频：${title}`);
   sendMpv(["loadfile", targetUrl, "replace"]);
 }
 
 function restoreMediaIfNeeded(media, source) {
   const url = String(media?.url || "").trim();
   if (!url || currentLoadedUrl) return;
-  console.log(`�?${source} 恢复视频源`);
-  loadRemoteMedia(url, media?.title || "网络视频�?);
+  console.log(`从 ${source} 恢复视频源`);
+  loadRemoteMedia(url, media?.title || "网络视频");
 }
 
 function sendServer(payload) {

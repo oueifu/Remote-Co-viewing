@@ -2,7 +2,7 @@
 title Remote Co-Viewing Launcher
 
 echo ========================================
-echo Starting Remote Co-Viewing Desktop...
+echo Starting Remote Co-Viewing Server...
 echo ========================================
 
 set "SYNC_CINEMA_MPV_PATH=C:\Tools\mpv\mpv.exe"
@@ -15,8 +15,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo Starting app, please wait...
-call npm run desktop:dev
+echo Starting app and launching browser, please wait...
+call npm start
 
 if %errorlevel% neq 0 (
     echo [Error] Failed to start. Please check the errors above.

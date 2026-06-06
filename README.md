@@ -62,12 +62,42 @@ npm run desktop:dev
 
 ---
 
-## 🎬 关于 MPV 模式 (高级用户)
+## ⚙️ 项目配置 (.env)
 
-如果你要观看的本地电影是 `mkv`, `hevc`, `H.265`, `10bit` 或带有复杂杜比音轨的极客级视频，浏览器的原生解码器可能会出现无画面或无声音。此时你可以使用 `mpv` 模式。
+项目支持通过根目录下的 `.env` 文件进行快速个性化配置。
+1. 将项目根目录下的 `.env.example` 复制并重命名为 `.env`。
+2. 根据需要修改以下配置项：
+   * `PORT`：本地同步服务器运行的端口（默认 `5050`）。
+   * `SYNC_CINEMA_MPV_PATH`：自定义 `mpv` 播放器可执行文件的绝对路径。
 
-1. **下载 mpv**: 本源码不包含庞大的 `mpv.exe`。请前往 [mpv 官网](https://mpv.io/) 下载，并将其解压路径配置到系统环境变量 `PATH` 中。
-2. **启动模式**: 在应用内遇到解码失败提示时，请按提示操作或在命令行中手动启动 mpv 客户端模式。
+---
+
+## 🎬 关于 MPV 模式 (高级视频解码)
+
+如果您选择的本地电影是 `mkv`、`H.265 / HEVC` 视频或带有 `DTS` / `AC3` 复杂杜比音轨的极客级视频，由于 Electron 内置播放器（Chromium 核心）存在版权和解码限制，可能会出现**黑屏无画面**或**无声**。
+
+为了完美解决此问题，本项目支持通过本地 IPC 管道直接挂载发烧级开源播放器 **`mpv`** 进行同步播放。
+
+### 1. 下载并安装 mpv
+本项目发布包不包含庞大的 `mpv` 播放器。请先安装它：
+* **Windows 用户**：前往 [mpv.io 官网下载页](https://mpv.io/installation/)（或推荐 [shinchiro 编译版](https://sourceforge.net/projects/mpv-player-windows/files/)），下载后解压到本地任意文件夹（例如 `C:\Tools\mpv\`）。
+* **Mac 用户**：可以使用 Homebrew 快速安装：`brew install mpv`
+* **Linux 用户**：使用包管理器安装，例如：`sudo apt install mpv`
+
+### 2. 配置应用关联 mpv（三种方案任选其一）
+桌面端在启动 mpv 模式时会按照以下顺序自动检索 `mpv` 的路径：
+* **方案 A（最推荐，免配环境变量）**：复制根目录的 `.env.example` 为 `.env`，然后在其中填写你的 `mpv.exe` 路径：
+  ```ini
+  SYNC_CINEMA_MPV_PATH=C:\Tools\mpv\mpv.exe
+  ```
+* **方案 B（配置系统 Path）**：将 `mpv` 所在的文件夹路径（例如 `C:\Tools\mpv\`）添加到系统的**环境变量 `PATH`** 中。
+* **方案 C（默认自动搜索路径）**：直接将 `mpv.exe` 安装或放置在以下默认搜索路径中，程序会自动识别：
+  * `C:\Program Files\mpv\mpv.exe`
+  * `C:\Program Files (x86)\mpv\mpv.exe`
+  * Scoop 默认安装路径、Chocolatey 默认安装路径等。
+
+### 3. 如何使用
+当您在桌面端加载 mkv 等复杂视频时，系统会自动检测并提示您。点击网页底部的**「使用受控 mpv 同步模式（第一版）」**按钮，程序便会为您和好友自动唤起 `mpv` 独立播放窗口，并使用当前网页作为遥控器同步两端的播放、暂停和进度拖拽。
 
 ## 🔒 隐私与安全性申明
 

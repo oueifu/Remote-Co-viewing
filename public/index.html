@@ -39,6 +39,12 @@
         <div class="main-content">
             <div class="video-container">
                 <video id="video-player" playsinline></video>
+                <div id="audio-unlock-banner" class="audio-unlock-banner" style="display:none">
+                    <div class="audio-unlock-inner">
+                        <span class="audio-unlock-icon">🔊</span>
+                        <span>对方已开始播放，点击此处解锁声音并同步</span>
+                    </div>
+                </div>
                 <div id="danmaku-stage" class="danmaku-stage"></div>
                 <div id="video-placeholder" class="video-placeholder">
                     <div class="placeholder-art" aria-hidden="true">
@@ -108,13 +114,14 @@
             <div class="room-header glass-card">
                 <div class="section-title" data-i18n="room_settings">房间与配置</div>
                 <div class="input-row-group">
-                    <input type="text" id="room-input" class="custom-input" placeholder="房间名" value="movie-room">
+                    <input type="text" id="room-input" class="custom-input" placeholder="房间号 (0-1000)" value="">
                     <input type="text" id="name-input" class="custom-input" placeholder="昵称" value="用户">
                 </div>
                 <div class="input-row-group">
                     <input type="text" id="server-input" class="custom-input" placeholder="服务器地址">
                     <button id="connect-btn" type="button" class="btn btn-primary" data-i18n="connect">连接</button>
                 </div>
+                <p id="server-beta-warning" class="hint" style="color: #f59e0b; margin-top: 4px; line-height: 1.4; display: none;">⚠️ 当前连接为作者免费测试服务器，可能存在休眠或限流，建议自行部署以获得最佳体验。</p>
                 <div class="input-row-group">
                     <select id="lang-switch" class="custom-input" aria-label="Language">
                         <option value="zh">中文</option>
@@ -142,6 +149,12 @@
                 <div class="section-title" data-i18n="local_video">本地电影</div>
                 <input type="file" id="local-file-input" accept="video/*,.mkv,.avi,.rmvb,.flv,.mov,.mp4,.webm,.m4v" style="display:none;">
                 <button id="choose-local-btn" type="button" class="btn wide-btn" data-i18n="choose_local">📁 选择本地电影文件</button>
+                <!-- mpv 路径启动（仅本机 localhost 用户可见）-->
+                <div id="mpv-path-row" class="input-row-group" style="display:none; margin-top:8px;">
+                    <input type="text" id="mpv-path-input" class="custom-input" placeholder="输入文件完整路径，如 D:\电影.mkv">
+                    <button id="mpv-launch-btn" type="button" class="btn">🎬 mpv</button>
+                </div>
+                <p id="mpv-hint" class="hint" style="display:none;">本机模式：mpv 将直接开启并接入房间同步，无声音问题。</p>
             </div>
 
             <div class="glass-card">

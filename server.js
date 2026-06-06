@@ -1,9 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Q Credit
+// Load environment variables from .env file if it exists
+try {
+  const envPath = path.join(__dirname, ".env");
+  if (fs.existsSync(envPath)) {
+    fs.readFileSync(envPath, "utf8").split(/\r?\n/).forEach((line) => {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        const key = match[1];
+        let val = (match[2] || "").trim();
+        if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+        if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+        if (process.env[key] === undefined) process.env[key] = val;
+      }
+    });
+  }
+} catch {}
+
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { spawn } = require("node:child_process");
 const axios = require("axios");
 const { WebSocketServer } = require("ws");
 
@@ -65,7 +83,7 @@ function setRoomMedia(room, media) {
   if (!room || !media || !media.url) return;
   room.media = {
     url: String(media.url || "").trim(),
-    title: String(media.title || "网络视频�?).trim() || "网络视频�?,
+    title: String(media.title || "网络视频").trim() || "网络视频",
     cid: parseCid(media.cid),
     sourceType: String(media.sourceType || "remote").trim() || "remote"
   };
@@ -361,6 +379,44 @@ async function serveProxyVideo(req, res, url) {
 
 function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === "/api/config") {
+    const bypass = process.env.IS_AUTHOR === "true";
+    sendText(res, 200, "application/json; charset=utf-8", JSON.stringify({
+      bypassLimits: bypass,
+      roomMax: bypass ? null : 1000,
+      maxOccupancy: bypass ? null : 2
+    }));
+    return;
+  }
+
+  if (url.pathname === "/api/launch-mpv") {
+    const addr = req.socket.remoteAddress;
+    const isLocal = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+    if (!isLocal) {
+      sendText(res, 403, "application/json; charset=utf-8", JSON.stringify({ error: "Forbidden: localhost only." }));
+      return;
+    }
+    const filePath  = url.searchParams.get("file");
+    const roomId    = url.searchParams.get("room") || "100";
+    const userName  = url.searchParams.get("name") || "Host";
+    const serverWs  = url.searchParams.get("server") || `ws://127.0.0.1:${PORT}/ws`;
+    if (!filePath) {
+      sendText(res, 400, "application/json; charset=utf-8", JSON.stringify({ error: "Missing file parameter." }));
+      return;
+    }
+    const mpvClientJs = path.join(__dirname, "mpv-client.js");
+    const mpvBinArg   = process.env.SYNC_CINEMA_MPV_PATH
+      ? ["--mpv", process.env.SYNC_CINEMA_MPV_PATH] : [];
+    const child = spawn(
+      process.execPath,
+      [mpvClientJs, "--server", serverWs, "--room", roomId, "--name", userName, "--file", filePath, ...mpvBinArg],
+      { detached: true, stdio: "ignore" }
+    );
+    child.unref();
+    sendText(res, 200, "application/json; charset=utf-8", JSON.stringify({ ok: true }));
+    return;
+  }
+
   if (url.pathname === "/api/bilibili-danmaku" || url.pathname === "/api/danmaku") {
     serveBilibiliDanmaku(req, res, url);
     return;
@@ -449,14 +505,42 @@ wss.on("connection", (ws) => {
       send(ws, { type: "error", message: "Bad JSON message." });
       return;
     }
+    const bypass = process.env.IS_AUTHOR === "true";
 
     if (message.type === "join") {
-      const { id: roomId, room } = getRoom(message.room);
+      const rawRoom = String(message.room || "").trim();
+
+      if (!bypass) {
+        const isLegacyNum = /^\d+$/.test(rawRoom);
+        const legacyNum = isLegacyNum ? parseInt(rawRoom, 10) : NaN;
+        
+        const match = rawRoom.match(/^movie-room(\d+)$/);
+        const movieNum = match ? parseInt(match[1], 10) : NaN;
+
+        const isValid = (rawRoom === "1024") || 
+                        (isLegacyNum && !isNaN(legacyNum) && legacyNum >= 0 && legacyNum <= 1000) ||
+                        (match && !isNaN(movieNum) && movieNum >= 0 && movieNum <= 10000);
+
+        if (!isValid) {
+          send(ws, { type: "error", message: "房间号不符合规范（作者版为 1024，开发版为 movie-room 后接 0 到 10000 之间的数字）。" });
+          ws.close();
+          return;
+        }
+      }
+
+      const { id: roomId, room } = getRoom(rawRoom);
       client.roomId = roomId;
       client.name = String(message.name || "Viewer").trim().slice(0, 40) || "Viewer";
       client.sessionToken = String(message.sessionToken || "").trim().slice(0, 120);
 
-      // join 阶段改成“房主审核制”：只有房主本人或被房主批准的访客，才会进入正式 clients�?      const canClaimHost = !room.hostSessionToken || (client.sessionToken && client.sessionToken === room.hostSessionToken);
+      // 如果是专属房间 1024，进行房主 Token 校验以防抢占
+      if (roomId === "1024" && room.clients.size === 0 && client.sessionToken !== "author-exclusive-token-1024") {
+        send(ws, { type: "error", message: "该专属房间主控离线，目前不可抢占。" });
+        ws.close();
+        return;
+      }
+
+      // join 阶段改成“房主审核制”：只有房主本人或被房主批准的访客，才会进入正式 clients。      const canClaimHost = !room.hostSessionToken || (client.sessionToken && client.sessionToken === room.hostSessionToken);
       if (room.clients.size === 0 && room.pendingClients.size === 0 && canClaimHost) {
         room.hostClientId = client.id;
         room.hostSessionToken = client.sessionToken || client.id;
@@ -475,19 +559,19 @@ wss.on("connection", (ws) => {
       }
 
       if (!isHostOnline(room)) {
-        send(ws, { type: "error", message: "房主暂不在线，无法审�? });
+        send(ws, { type: "error", message: "房主暂不在线，无法审核。" });
         ws.close();
         return;
       }
 
-      if (roomJoinCount(room) >= MAX_ROOM_MEMBERS) {
-        send(ws, { type: "error", message: "房间人数已满，当前仅支持 2 人房间�? });
+      if (!bypass && roomJoinCount(room) >= MAX_ROOM_MEMBERS) {
+        send(ws, { type: "error", message: "房间人数已满，当前仅支持 2 人房间。" });
         ws.close();
         return;
       }
 
       room.pendingClients.set(client.id, client);
-      send(ws, { type: "join_pending", room: roomId, message: "已向管理员发送加入申请，请等待房主开�?.." });
+      send(ws, { type: "join_pending", room: roomId, message: "已向管理员发送加入申请，请等待房主开放.." });
 
       const hostClient = room.clients.get(room.hostClientId);
       if (hostClient) {
@@ -524,14 +608,14 @@ wss.on("connection", (ws) => {
 
       if (!message.approved) {
         room.pendingClients.delete(targetId);
-        send(pendingClient.ws, { type: "join_rejected", message: "房主拒绝了你的加入申�? });
+        send(pendingClient.ws, { type: "join_rejected", message: "房主拒绝了你的加入申请。" });
         pendingClient.ws.close();
         return;
       }
 
-      if (room.clients.size >= MAX_ROOM_MEMBERS) {
+      if (!bypass && room.clients.size >= MAX_ROOM_MEMBERS) {
         room.pendingClients.delete(targetId);
-        send(pendingClient.ws, { type: "join_rejected", message: "房间人数已满，当前仅支持 2 人房间�? });
+        send(pendingClient.ws, { type: "join_rejected", message: "房间人数已满，当前仅支持 2 人房间。" });
         pendingClient.ws.close();
         return;
       }
@@ -541,7 +625,7 @@ wss.on("connection", (ws) => {
     }
 
     if (!room.clients.has(client.id)) {
-      send(ws, { type: "error", message: "等待房主审核中，当前不能操作房间�? });
+      send(ws, { type: "error", message: "等待房主审核中，当前不能操作房间。" });
       return;
     }
 
@@ -573,11 +657,11 @@ wss.on("connection", (ws) => {
 
     if (message.type === "load_video_request") {
       const videoUrl = String(message.url || "").trim();
-      const title = String(message.title || "网络视频�?).trim() || "网络视频�?;
+      const title = String(message.title || "网络视频").trim() || "网络视频";
       const cid = parseCid(message.cid);
       if (!videoUrl) return;
       if (/^(blob:|file:)/i.test(videoUrl)) {
-        send(ws, { type: "error", message: "本地文件不会自动共享，双方需要各自选择同一个文件�? });
+        send(ws, { type: "error", message: "本地文件不会自动共享，双方需要各自选择同一个文件。" });
         return;
       }
       const resetPlayback = updateRoomMedia(room, {
@@ -598,22 +682,7 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    if (typeof message.type === "string" && ["rtc_offer", "rtc_answer", "rtc_ice", "rtc_hangup"].includes(message.type)) {
-      const payload = {
-        type: message.type,
-        sender: {
-          id: client.id,
-          name: client.name
-        }
-      };
-
-      if (message.type === "rtc_offer" && message.offer) payload.offer = message.offer;
-      if (message.type === "rtc_answer" && message.answer) payload.answer = message.answer;
-      if (message.type === "rtc_ice" && message.candidate) payload.candidate = message.candidate;
-
-      broadcast(room, payload, ws);
-      return;
-    }
+    // WebRTC signaling removed.
 
     if (message.type === "resolve_bilibili") {
       const videoUrl = String(message.url || "").trim();
@@ -621,7 +690,7 @@ wss.on("connection", (ws) => {
 
       const bvMatch = videoUrl.match(/(BV[0-9A-Za-z]{10})/);
       if (!bvMatch) {
-        send(ws, { type: "chat", sender: { id: "system", name: "系统提示" }, text: "未识别到有效�?B �?BV 号，请检查链接�? });
+        send(ws, { type: "chat", sender: { id: "system", name: "系统提示" }, text: "未识别到有效的B 站BV 号，请检查链接。" });
         return;
       }
 
@@ -635,10 +704,10 @@ wss.on("connection", (ws) => {
         });
 
         if (!viewRes.data || viewRes.data.code !== 0) {
-          throw new Error(viewRes.data?.message || "B 站视频信息获取失�?);
+          throw new Error(viewRes.data?.message || "B 站视频信息获取失败");
         }
 
-        const title = String(viewRes.data.data.title || "B 站视�?);
+        const title = String(viewRes.data.data.title || "B 站视频");
         const cid = viewRes.data.data.cid;
         if (!cid) throw new Error("未获取到 cid");
 
@@ -682,7 +751,7 @@ wss.on("connection", (ws) => {
                 hasDash ? "has_dash_video" : ""
               ].filter(Boolean).join(",");
               console.log(`[bilibili] qn=${qn} rejected reason=${rejectReason || "unknown"}`);
-              lastError = new Error(`qn=${qn} 未返回可播放�?MP4 单文件流`);
+              lastError = new Error(`qn=${qn} 未返回可播放的MP4 单文件流`);
               continue;
             }
             if (res.data?.data) {
@@ -710,7 +779,7 @@ wss.on("connection", (ws) => {
         }
 
         if (!playRes) {
-          throw new Error("�?B站视频未返回手机可播放的 MP4 单文件流，手机浏览器可能无法播放�?);
+          throw new Error("⚠ B站视频未返回手机可播放的 MP4 单文件流，手机浏览器可能无法播放。");
         }
 
         const data = playRes.data.data;
@@ -719,11 +788,11 @@ wss.on("connection", (ws) => {
         if (Array.isArray(data.durl) && data.durl.length > 0 && supportsMp4Format(data)) {
           resolvedUrl = data.durl[0].url || data.durl[0].backup_url?.[0] || data.durl[0].backupUrl?.[0] || "";
         } else if (data.dash && Array.isArray(data.dash.video) && data.dash.video.length > 0) {
-          throw new Error("�?B站视频未返回手机可播放的 MP4 单文件流，手机浏览器可能无法播放�?);
+          throw new Error("⚠ B站视频未返回手机可播放的 MP4 单文件流，手机浏览器可能无法播放。");
         }
 
         if (!resolvedUrl) {
-          throw new Error("�?B站视频未返回手机可播放的 MP4 单文件流，手机浏览器可能无法播放�?);
+          throw new Error("⚠ B站视频未返回手机可播放的 MP4 单文件流，手机浏览器可能无法播放。");
         }
 
         let selectedHostname = "";
@@ -753,8 +822,8 @@ wss.on("connection", (ws) => {
       } catch (error) {
         const isTimeout = error && error.code === "ECONNABORTED";
         const reason = isTimeout
-          ? "B站解析请求超时，可能被风控限流。请稍后重试或改用手动直链�?
-          : error.message || "B站解析出现未知错误�?;
+          ? "B站解析请求超时，可能被风控限流。请稍后重试或改用手动直链。"
+          : error.message || "B站解析出现未知错误";
 
         send(ws, {
           type: "chat",
@@ -830,6 +899,17 @@ setInterval(() => {
 }, 5000).unref();
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Sync movie server listening on http://localhost:${PORT}`);
+  const localUrl = `http://localhost:${PORT}`;
+  console.log(`Sync movie server listening on ${localUrl}`);
+  // Auto-open browser (only if not running under Electron/desktop app)
+  if (process.env.SYNC_CINEMA_DESKTOP !== "true" && process.env.NO_AUTO_OPEN !== "true") {
+    if (process.platform === "win32") {
+      spawn("cmd", ["/c", "start", "", localUrl], { detached: true, stdio: "ignore" }).unref();
+    } else if (process.platform === "darwin") {
+      spawn("open", [localUrl], { detached: true, stdio: "ignore" }).unref();
+    } else {
+      spawn("xdg-open", [localUrl], { detached: true, stdio: "ignore" }).unref();
+    }
+  }
 });
 
