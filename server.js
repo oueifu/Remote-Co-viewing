@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Q Credit
+
+const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { spawn } = require("node:child_process");
+const axios = require("axios");
+const { WebSocketServer } = require("ws");
+
 // Load environment variables from .env file if it exists
 try {
   const envPath = path.join(__dirname, ".env");
@@ -17,15 +26,9 @@ try {
   }
 } catch {}
 
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
-const crypto = require("node:crypto");
-const { spawn } = require("node:child_process");
-const axios = require("axios");
-const { WebSocketServer } = require("ws");
-
 const PORT = Number(process.env.PORT || 5050);
+const isHostedRelay = process.env.HOSTED_RELAY === "true";
+const BIND_HOST = process.env.BIND_HOST || (isHostedRelay ? "0.0.0.0" : "127.0.0.1");
 let publicUrl = process.env.PUBLIC_URL || "";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const AXIOS_TIMEOUT = 5000;
@@ -45,6 +48,9 @@ const rooms = new Map();
 
 function roomState() {
   return {
+    roomEpoch: Date.now(),
+    stateVersion: 1,
+    mediaVersion: 1,
     paused: true,
     time: 0,
     rate: 1,
@@ -54,18 +60,31 @@ function roomState() {
     hostClientId: null,
     hostSessionToken: null,
     clients: new Map(),
-    pendingClients: new Map()
+    pendingClients: new Map(),
+    destroyTimer: null
   };
 }
 
+const MAX_GLOBAL_ROOMS = Number(process.env.MAX_GLOBAL_ROOMS || 1000);
+
 function getRoom(roomId) {
   const cleanId = String(roomId || "default").trim().slice(0, 80) || "default";
-  if (!rooms.has(cleanId)) rooms.set(cleanId, roomState());
-  return { id: cleanId, room: rooms.get(cleanId) };
+  if (!rooms.has(cleanId)) {
+    if (rooms.size >= MAX_GLOBAL_ROOMS) {
+      return { id: cleanId, room: null, error: "达到全局最大房间数限制" };
+    }
+    rooms.set(cleanId, roomState());
+  }
+  const room = rooms.get(cleanId);
+  if (room && room.destroyTimer) {
+    clearTimeout(room.destroyTimer);
+    room.destroyTimer = null;
+  }
+  return { id: cleanId, room };
 }
 
-function currentPlaybackState(room) {
-  const now = Date.now();
+function currentPlaybackState(room, referenceTime = Date.now()) {
+  const now = referenceTime;
   if (room.paused) {
     return { paused: true, time: room.time, rate: room.rate, updatedAt: now };
   }
@@ -90,16 +109,24 @@ function setRoomMedia(room, media) {
 }
 
 function send(ws, payload) {
-  if (ws.readyState === ws.OPEN) {
+  if (ws && ws.readyState === ws.OPEN) {
+    if (ws.bufferedAmount && ws.bufferedAmount > 1048576) {
+      return false;
+    }
     ws.send(JSON.stringify(payload));
+    return true;
   }
+  return false;
 }
 
 function broadcast(room, payload, except = null) {
+  if (!room) return;
   const encoded = JSON.stringify(payload);
   for (const client of room.clients.values()) {
     if (client.ws !== except && client.ws.readyState === client.ws.OPEN) {
-      client.ws.send(encoded);
+      if (!client.ws.bufferedAmount || client.ws.bufferedAmount <= 1048576) {
+        client.ws.send(encoded);
+      }
     }
   }
 }
@@ -126,7 +153,8 @@ function updateRoomPlayback(room, payload, client) {
   room.time = Math.max(0, time);
   room.rate = rate;
   room.updatedAt = now;
-  room.lastActionBy = client.id;
+  room.lastActionBy = client ? client.id : null;
+  room.stateVersion = (room.stateVersion || 0) + 1;
   if (payload.playerMode) {
     room.playerMode = payload.playerMode;
   }
@@ -134,22 +162,39 @@ function updateRoomPlayback(room, payload, client) {
   return {
     type: "state",
     reason: payload.reason || "update",
+    roomEpoch: room.roomEpoch,
+    stateVersion: room.stateVersion,
+    mediaVersion: room.mediaVersion,
     state: {
-      ...currentPlaybackState(room),
+      ...currentPlaybackState(room, now),
       playerMode: room.playerMode || "html5"
     },
-    actor: {
+    actor: client ? {
       id: client.id,
       name: client.name
-    },
+    } : null,
     serverTime: now,
     media: room.media
   };
 }
 
-function cleanupRoom(roomId, room) {
+function cleanupRoom(roomId, room, immediate = false) {
   if (room.clients.size === 0 && room.pendingClients.size === 0) {
-    rooms.delete(roomId);
+    if (immediate) {
+      if (room.destroyTimer) clearTimeout(room.destroyTimer);
+      rooms.delete(roomId);
+      return;
+    }
+    if (!room.destroyTimer) {
+      room.destroyTimer = setTimeout(() => {
+        if (room.clients.size === 0 && room.pendingClients.size === 0) {
+          rooms.delete(roomId);
+        }
+      }, 45000);
+    }
+  } else if (room.destroyTimer) {
+    clearTimeout(room.destroyTimer);
+    room.destroyTimer = null;
   }
 }
 
@@ -166,6 +211,9 @@ function joinedPayload(roomId, room, client) {
     type: "joined",
     clientId: client.id,
     room: roomId,
+    roomEpoch: room.roomEpoch,
+    stateVersion: room.stateVersion,
+    mediaVersion: room.mediaVersion,
     state: {
       ...currentPlaybackState(room),
       playerMode: room.playerMode || "html5"
@@ -221,7 +269,11 @@ function resetRoomPlayback(room, clientId = null) {
 function updateRoomMedia(room, media, clientId = null) {
   const changed = mediaSignature(room.media) !== mediaSignature(media);
   setRoomMedia(room, media);
-  if (changed) resetRoomPlayback(room, clientId);
+  if (changed) {
+    room.mediaVersion = (room.mediaVersion || 0) + 1;
+    resetRoomPlayback(room, clientId);
+    room.stateVersion = (room.stateVersion || 0) + 1;
+  }
   return changed;
 }
 
@@ -377,25 +429,148 @@ async function serveProxyVideo(req, res, url) {
   }
 }
 
+const LOOPBACK_AUTH_TOKEN = process.env.SYNC_CINEMA_LOCAL_TOKEN || crypto.randomBytes(24).toString("hex");
+process.env.SYNC_CINEMA_LOCAL_TOKEN = LOOPBACK_AUTH_TOKEN;
+
+const DEFAULT_STUN_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "stun:stun.syncthing.net:3478" },
+  { urls: "stun:stun.miwifi.com:3478" }
+];
+
+function getIceServersConfig() {
+  const servers = [...DEFAULT_STUN_SERVERS];
+  const turnUrl = process.env.TURN_URL || process.env.COTURN_URL;
+  const turnSecret = process.env.TURN_SECRET || process.env.COTURN_SECRET;
+  if (turnUrl) {
+    if (turnSecret) {
+      const ttl = Number(process.env.TURN_TTL || 86400);
+      const expiry = Math.floor(Date.now() / 1000) + ttl;
+      const username = `${expiry}:${crypto.randomUUID()}`;
+      const hmac = crypto.createHmac("sha1", turnSecret);
+      hmac.update(username);
+      const credential = hmac.digest("base64");
+      servers.push({
+        urls: turnUrl,
+        username,
+        credential
+      });
+    } else {
+      const turnEntry = { urls: turnUrl };
+      if (process.env.TURN_USERNAME) turnEntry.username = process.env.TURN_USERNAME;
+      if (process.env.TURN_CREDENTIAL) turnEntry.credential = process.env.TURN_CREDENTIAL;
+      servers.push(turnEntry);
+    }
+  }
+  return servers;
+}
+
+const serverStats = {
+  totalConnections: 0,
+  totalMessages: 0,
+  totalRejectedJoins: 0
+};
+
+function getActiveStats() {
+  let activeClients = 0;
+  for (const room of rooms.values()) {
+    activeClients += room.clients.size;
+  }
+  return {
+    activeRooms: rooms.size,
+    activeClients,
+    totalConnections: serverStats.totalConnections,
+    totalMessages: serverStats.totalMessages,
+    totalRejectedJoins: serverStats.totalRejectedJoins,
+    uptimeSeconds: Math.floor(process.uptime()),
+    version: "0.9.0-beta.1",
+    mode: isHostedRelay ? "hosted-relay" : "desktop-local"
+  };
+}
+
+function getPrometheusMetrics() {
+  const stats = getActiveStats();
+  return [
+    `# HELP sync_active_rooms Current number of active rooms`,
+    `# TYPE sync_active_rooms gauge`,
+    `sync_active_rooms ${stats.activeRooms}`,
+    `# HELP sync_active_clients Current number of active connected clients in rooms`,
+    `# TYPE sync_active_clients gauge`,
+    `sync_active_clients ${stats.activeClients}`,
+    `# HELP sync_total_connections Total WebSocket connections established`,
+    `# TYPE sync_total_connections counter`,
+    `sync_total_connections ${stats.totalConnections}`,
+    `# HELP sync_total_messages Total WebSocket messages received`,
+    `# TYPE sync_total_messages counter`,
+    `sync_total_messages ${stats.totalMessages}`,
+    `# HELP sync_rejected_joins Total rejected room join attempts`,
+    `# TYPE sync_rejected_joins counter`,
+    `sync_rejected_joins ${stats.totalRejectedJoins}`,
+    `# HELP sync_uptime_seconds Total server uptime in seconds`,
+    `# TYPE sync_uptime_seconds gauge`,
+    `sync_uptime_seconds ${stats.uptimeSeconds}`
+  ].join("\n") + "\n";
+}
+
 function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  if (url.pathname === "/api/config") {
-    const bypass = process.env.IS_AUTHOR === "true";
+  if (url.pathname === "/healthz" || url.pathname === "/livez" || url.pathname === "/readyz" || url.pathname === "/api/health") {
     sendText(res, 200, "application/json; charset=utf-8", JSON.stringify({
-      bypassLimits: bypass,
-      roomMax: bypass ? null : 1000,
-      maxOccupancy: bypass ? null : 2
+      status: "ok",
+      uptime: Math.floor(process.uptime()),
+      rooms: rooms.size,
+      mode: isHostedRelay ? "hosted-relay" : "desktop-local",
+      version: "0.9.0-beta.1"
+    }));
+    return;
+  }
+
+  if (url.pathname === "/api/stats") {
+    sendText(res, 200, "application/json; charset=utf-8", JSON.stringify(getActiveStats()));
+    return;
+  }
+
+  if (url.pathname === "/metrics") {
+    sendText(res, 200, "text/plain; version=0.0.4; charset=utf-8", getPrometheusMetrics());
+    return;
+  }
+
+  if (url.pathname === "/api/ice-servers") {
+    sendText(res, 200, "application/json; charset=utf-8", JSON.stringify({
+      iceServers: getIceServersConfig()
+    }));
+    return;
+  }
+
+  if (url.pathname === "/api/config") {
+    sendText(res, 200, "application/json; charset=utf-8", JSON.stringify({
+      bypassLimits: false,
+      roomMax: 1000,
+      maxOccupancy: 2
     }));
     return;
   }
 
   if (url.pathname === "/api/launch-mpv") {
+    if (isHostedRelay) {
+      sendText(res, 403, "application/json; charset=utf-8", JSON.stringify({ error: "Forbidden: disabled in hosted-relay mode." }));
+      return;
+    }
     const addr = req.socket.remoteAddress;
     const isLocal = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
     if (!isLocal) {
       sendText(res, 403, "application/json; charset=utf-8", JSON.stringify({ error: "Forbidden: localhost only." }));
       return;
     }
+
+    const reqToken = req.headers["x-loopback-token"] || url.searchParams.get("token");
+    if (reqToken !== LOOPBACK_AUTH_TOKEN) {
+      sendText(res, 401, "application/json; charset=utf-8", JSON.stringify({ error: "Unauthorized: invalid loopback token." }));
+      return;
+    }
+
     const filePath  = url.searchParams.get("file");
     const roomId    = url.searchParams.get("room") || "100";
     const userName  = url.searchParams.get("name") || "Host";
@@ -428,6 +603,10 @@ function serveStatic(req, res) {
   }
 
   if (url.pathname === "/api/set-public-url") {
+    if (isHostedRelay) {
+      sendText(res, 403, "text/plain; charset=utf-8", "Forbidden in hosted-relay mode");
+      return;
+    }
     const newUrl = url.searchParams.get("url");
     if (newUrl) {
       publicUrl = newUrl;
@@ -441,7 +620,14 @@ function serveStatic(req, res) {
     return;
   }
 
-  const decodedPath = decodeURIComponent(url.pathname);
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(url.pathname);
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Bad Request: Malformed URI");
+    return;
+  }
   const relativePath = decodedPath === "/"
     ? "index.html"
     : path.normalize(decodedPath.replace(/^[/\\]+/, ""));
@@ -482,10 +668,84 @@ function serveStatic(req, res) {
   });
 }
 
-const server = http.createServer(serveStatic);
-const wss = new WebSocketServer({ server, path: "/ws" });
+const ipConnectionCount = new Map();
+const MAX_CONNECTIONS_PER_IP = Number(process.env.MAX_CONNECTIONS_PER_IP || 10);
 
-wss.on("connection", (ws) => {
+function verifyWsOrigin(info, cb) {
+  const origin = info.origin || (info.req && info.req.headers ? info.req.headers.origin : "");
+  const host = (info.req && info.req.headers ? info.req.headers.host : "");
+  if (!origin) return cb(true);
+
+  try {
+    const parsedOrigin = new URL(origin);
+    if (parsedOrigin.hostname === "localhost" || parsedOrigin.hostname === "127.0.0.1" || parsedOrigin.protocol === "local-movie:" || parsedOrigin.protocol === "file:") {
+      return cb(true);
+    }
+    if (host && parsedOrigin.host === host) {
+      return cb(true);
+    }
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (allowedOrigins.some((allowed) => parsedOrigin.origin === allowed || parsedOrigin.hostname === allowed || allowed === "*")) {
+      return cb(true);
+    }
+    return cb(false, 403, "Forbidden: Origin not allowed");
+  } catch {
+    return cb(false, 400, "Bad Request: Invalid Origin");
+  }
+}
+
+const server = http.createServer(serveStatic);
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  maxPayload: 65536,
+  verifyClient: verifyWsOrigin
+});
+
+const heartbeatInterval = setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.isAlive === false) {
+      client.terminate();
+      continue;
+    }
+    client.isAlive = false;
+    client.ping();
+  }
+}, 30000);
+heartbeatInterval.unref();
+
+wss.on("connection", (ws, req) => {
+  serverStats.totalConnections++;
+
+  const clientIp = req?.headers?.["x-forwarded-for"]
+    ? String(req.headers["x-forwarded-for"]).split(",")[0].trim()
+    : (req?.socket?.remoteAddress || "127.0.0.1");
+
+  const currentIpCount = ipConnectionCount.get(clientIp) || 0;
+  if (currentIpCount >= MAX_CONNECTIONS_PER_IP) {
+    serverStats.totalRejectedJoins++;
+    send(ws, { type: "error", message: "当前 IP 连接数已达上限，请稍后再试。" });
+    ws.close(1008, "Too Many Connections from this IP");
+    return;
+  }
+  ipConnectionCount.set(clientIp, currentIpCount + 1);
+
+  ws.isAlive = true;
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
+  ws.on("error", () => {
+    // Socket level error (e.g. maxPayload exceeded, client disconnect)
+  });
+  ws.on("close", () => {
+    const count = (ipConnectionCount.get(clientIp) || 1) - 1;
+    if (count <= 0) ipConnectionCount.delete(clientIp);
+    else ipConnectionCount.set(clientIp, count);
+  });
+
+  let messageCount = 0;
+  let lastMessageReset = Date.now();
+
   const client = {
     id: crypto.randomUUID(),
     name: "Viewer",
@@ -498,6 +758,23 @@ wss.on("connection", (ws) => {
   };
 
   ws.on("message", async (raw) => {
+    serverStats.totalMessages++;
+    const now = Date.now();
+    if (now - lastMessageReset > 1000) {
+      messageCount = 0;
+      lastMessageReset = now;
+    }
+    messageCount++;
+    if (messageCount > 40) {
+      send(ws, { type: "error", message: "发送消息过于频繁，已被限流。" });
+      return;
+    }
+
+    if (raw.length > 65536) {
+      send(ws, { type: "error", message: "消息体过大，已被丢弃。" });
+      return;
+    }
+
     let message;
     try {
       message = JSON.parse(raw.toString());
@@ -505,27 +782,24 @@ wss.on("connection", (ws) => {
       send(ws, { type: "error", message: "Bad JSON message." });
       return;
     }
-    const bypass = process.env.IS_AUTHOR === "true";
+
+    if (message.type === "ping") {
+      send(ws, {
+        type: "pong",
+        clientTime: message.clientTime,
+        serverTime: Date.now()
+      });
+      return;
+    }
 
     if (message.type === "join") {
       const rawRoom = String(message.room || "").trim();
+      const isValid = /^[a-zA-Z0-9_\-\u4e00-\u9fa5]{1,40}$/.test(rawRoom);
 
-      if (!bypass) {
-        const isLegacyNum = /^\d+$/.test(rawRoom);
-        const legacyNum = isLegacyNum ? parseInt(rawRoom, 10) : NaN;
-        
-        const match = rawRoom.match(/^movie-room(\d+)$/);
-        const movieNum = match ? parseInt(match[1], 10) : NaN;
-
-        const isValid = (rawRoom === "1024") || 
-                        (isLegacyNum && !isNaN(legacyNum) && legacyNum >= 0 && legacyNum <= 1000) ||
-                        (match && !isNaN(movieNum) && movieNum >= 0 && movieNum <= 10000);
-
-        if (!isValid) {
-          send(ws, { type: "error", message: "房间号不符合规范（作者版为 1024，开发版为 movie-room 后接 0 到 10000 之间的数字）。" });
-          ws.close();
-          return;
-        }
+      if (!isValid) {
+        send(ws, { type: "error", message: "房间号不符合规范，请输入 1-40 位字母、数字或汉字。" });
+        ws.close();
+        return;
       }
 
       const { id: roomId, room } = getRoom(rawRoom);
@@ -533,14 +807,8 @@ wss.on("connection", (ws) => {
       client.name = String(message.name || "Viewer").trim().slice(0, 40) || "Viewer";
       client.sessionToken = String(message.sessionToken || "").trim().slice(0, 120);
 
-      // 如果是专属房间 1024，进行房主 Token 校验以防抢占
-      if (roomId === "1024" && room.clients.size === 0 && client.sessionToken !== "author-exclusive-token-1024") {
-        send(ws, { type: "error", message: "该专属房间主控离线，目前不可抢占。" });
-        ws.close();
-        return;
-      }
-
-      // join 阶段改成“房主审核制”：只有房主本人或被房主批准的访客，才会进入正式 clients。      const canClaimHost = !room.hostSessionToken || (client.sessionToken && client.sessionToken === room.hostSessionToken);
+      // join 阶段采用“房主审核制”：只有房主本人或被房主批准的访客，才会进入正式 clients。
+      const canClaimHost = !room.hostSessionToken || (client.sessionToken && client.sessionToken === room.hostSessionToken);
       if (room.clients.size === 0 && room.pendingClients.size === 0 && canClaimHost) {
         room.hostClientId = client.id;
         room.hostSessionToken = client.sessionToken || client.id;
@@ -564,7 +832,7 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      if (!bypass && roomJoinCount(room) >= MAX_ROOM_MEMBERS) {
+      if (roomJoinCount(room) >= MAX_ROOM_MEMBERS) {
         send(ws, { type: "error", message: "房间人数已满，当前仅支持 2 人房间。" });
         ws.close();
         return;
@@ -613,7 +881,7 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      if (!bypass && room.clients.size >= MAX_ROOM_MEMBERS) {
+      if (room.clients.size >= MAX_ROOM_MEMBERS) {
         room.pendingClients.delete(targetId);
         send(pendingClient.ws, { type: "join_rejected", message: "房间人数已满，当前仅支持 2 人房间。" });
         pendingClient.ws.close();
@@ -675,6 +943,9 @@ wss.on("connection", (ws) => {
         url: videoUrl,
         title,
         cid,
+        roomEpoch: room.roomEpoch,
+        stateVersion: room.stateVersion,
+        mediaVersion: room.mediaVersion,
         resetPlayback,
         state: resetPlayback ? currentPlaybackState(room) : null,
         serverTime: Date.now()
@@ -816,6 +1087,9 @@ wss.on("connection", (ws) => {
           title: `[B站] ${title}`,
           cid: String(cid),
           resetPlayback,
+          roomEpoch: room.roomEpoch,
+          stateVersion: room.stateVersion,
+          mediaVersion: room.mediaVersion,
           state: resetPlayback ? currentPlaybackState(room) : null,
           serverTime: Date.now()
         });
@@ -844,10 +1118,42 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (message.type === "rtc_offer" || message.type === "rtc_answer" || message.type === "rtc_ice" || message.type === "rtc_hangup") {
+      const sanitized = {
+        type: message.type,
+        sender: {
+          id: client.id,
+          name: client.name
+        }
+      };
+      if (message.type === "rtc_offer" && message.offer) {
+        sanitized.offer = { type: String(message.offer.type || "offer"), sdp: String(message.offer.sdp || "") };
+      } else if (message.type === "rtc_answer" && message.answer) {
+        sanitized.answer = { type: String(message.answer.type || "answer"), sdp: String(message.answer.sdp || "") };
+      } else if (message.type === "rtc_ice" && message.candidate) {
+        sanitized.candidate = {
+          candidate: String(message.candidate.candidate || ""),
+          sdpMid: message.candidate.sdpMid !== undefined ? String(message.candidate.sdpMid) : null,
+          sdpMLineIndex: Number.isFinite(message.candidate.sdpMLineIndex) ? message.candidate.sdpMLineIndex : null,
+          usernameFragment: message.candidate.usernameFragment ? String(message.candidate.usernameFragment) : undefined
+        };
+      }
+
+      for (const [peerId, peer] of room.clients) {
+        if (peerId !== client.id && peer.ws && peer.ws.readyState === WebSocket.OPEN) {
+          send(peer.ws, sanitized);
+        }
+      }
+      return;
+    }
+
     if (message.type === "request-state") {
       send(ws, {
         type: "state",
         reason: "request",
+        roomEpoch: room.roomEpoch,
+        stateVersion: room.stateVersion,
+        mediaVersion: room.mediaVersion,
         state: {
           ...currentPlaybackState(room),
           playerMode: room.playerMode || "html5"
@@ -882,9 +1188,13 @@ wss.on("connection", (ws) => {
 
 setInterval(() => {
   for (const [roomId, room] of rooms) {
+    if (room.clients.size === 0) continue;
     const payload = {
       type: "state",
       reason: "tick",
+      roomEpoch: room.roomEpoch,
+      stateVersion: room.stateVersion,
+      mediaVersion: room.mediaVersion,
       state: {
         ...currentPlaybackState(room),
         playerMode: room.playerMode || "html5"
@@ -898,18 +1208,32 @@ setInterval(() => {
   }
 }, 5000).unref();
 
-server.listen(PORT, "0.0.0.0", () => {
-  const localUrl = `http://localhost:${PORT}`;
-  console.log(`Sync movie server listening on ${localUrl}`);
-  // Auto-open browser (only if not running under Electron/desktop app)
-  if (process.env.SYNC_CINEMA_DESKTOP !== "true" && process.env.NO_AUTO_OPEN !== "true") {
-    if (process.platform === "win32") {
-      spawn("cmd", ["/c", "start", "", localUrl], { detached: true, stdio: "ignore" }).unref();
-    } else if (process.platform === "darwin") {
-      spawn("open", [localUrl], { detached: true, stdio: "ignore" }).unref();
-    } else {
-      spawn("xdg-open", [localUrl], { detached: true, stdio: "ignore" }).unref();
+if (require.main === module) {
+  server.listen(PORT, BIND_HOST, () => {
+    const localUrl = `http://${BIND_HOST === "0.0.0.0" ? "localhost" : BIND_HOST}:${PORT}`;
+    console.log(`Sync movie server listening on ${localUrl} (bind: ${BIND_HOST}, mode: ${isHostedRelay ? "hosted-relay" : "desktop-local"})`);
+    // Auto-open browser (only if not running under Electron/desktop app)
+    if (process.env.SYNC_CINEMA_DESKTOP !== "true" && process.env.NO_AUTO_OPEN !== "true") {
+      if (process.platform === "win32") {
+        spawn("cmd", ["/c", "start", "", localUrl], { detached: true, stdio: "ignore" }).unref();
+      } else if (process.platform === "darwin") {
+        spawn("open", [localUrl], { detached: true, stdio: "ignore" }).unref();
+      } else {
+        spawn("xdg-open", [localUrl], { detached: true, stdio: "ignore" }).unref();
+      }
     }
-  }
-});
+  });
+}
+
+module.exports = {
+  server,
+  wss,
+  parseCid,
+  mediaSignature,
+  getIceServersConfig,
+  getActiveStats,
+  getPrometheusMetrics,
+  LOOPBACK_AUTH_TOKEN,
+  verifyWsOrigin
+};
 

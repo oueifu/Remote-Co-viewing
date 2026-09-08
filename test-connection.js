@@ -1,39 +1,49 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Q Credit
+
 const WebSocket = require('ws');
 
-const ws = new WebSocket('wss://remote-co-viewing.onrender.com/ws');
+const targetUrl = process.argv[2] || process.env.TARGET_WS_URL || 'ws://127.0.0.1:5050/ws';
+const testRoom = process.env.TARGET_ROOM || `smoke-${Date.now()}`;
+
+console.log(`Connecting to: ${targetUrl} (Room: ${testRoom})`);
+const ws = new WebSocket(targetUrl);
+
+let timer = setTimeout(() => {
+  console.error('Timeout waiting for response.');
+  process.exit(1);
+}, 8000);
 
 ws.on('open', () => {
-  console.log('WS Open');
+  console.log('WS connection opened, sending join request...');
   ws.send(JSON.stringify({
     type: 'join',
-    room: '1024',
-    name: 'test-agent'
+    room: testRoom,
+    name: 'SmokeTestAgent'
   }));
 });
 
 ws.on('message', (data) => {
   const msg = JSON.parse(data.toString());
-  console.log('Received:', msg);
+  console.log('Received:', msg.type);
   if (msg.type === 'error') {
-    console.log('Result: FAILED - ' + msg.message);
+    clearTimeout(timer);
+    console.error('Result: FAILED -', msg.message);
     process.exit(1);
-  } else if (msg.type === 'state') {
-    console.log('Result: SUCCESS - Joined Room 1024 successfully!');
+  } else if (msg.type === 'joined') {
+    clearTimeout(timer);
+    console.log(`Result: SUCCESS - Joined Room ${msg.room} successfully (isHost: ${msg.isHost})`);
+    ws.close();
     process.exit(0);
   }
 });
 
 ws.on('error', (err) => {
-  console.error('WS Error:', err);
+  clearTimeout(timer);
+  console.error('WS Error:', err.message || err);
   process.exit(1);
 });
 
 ws.on('close', (code, reason) => {
   console.log('WS Closed:', code, reason.toString());
-  setTimeout(() => process.exit(1), 500);
 });
-
-setTimeout(() => {
-  console.log('Timeout waiting for response.');
-  process.exit(1);
-}, 8000);

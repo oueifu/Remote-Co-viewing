@@ -56,6 +56,11 @@ const devtoolsBtn = $("#devtools-btn");
 const sponsorModal = $("#sponsor-modal");
 const sponsorCloseBtn = $("#sponsor-close-btn");
 const serverBetaWarning = $("#server-beta-warning");
+const randomRoomBtn = $("#random-room-btn");
+const toggleAdvancedBtn = $("#toggle-advanced-btn");
+const advancedPanel = $("#advanced-settings-panel");
+const useCloudServerBtn = $("#use-cloud-server-btn");
+const useLocalServerBtn = $("#use-local-server-btn");
 const desktopBridge = window.syncCinemaDesktop || null;
 const isDesktopApp = Boolean(desktopBridge?.isDesktop);
 const localVideoCard = chooseLocalButton?.closest(".glass-card") || null;
@@ -73,6 +78,9 @@ let cachedPublicUrl = "";
 let room = "";
 let displayName = "";
 let isHost = false;
+let currentRoomEpoch = null;
+let currentStateVersion = 0;
+let currentMediaVersion = 0;
 let joinPending = false;
 let suppressAutoReconnect = false;
 let isRemoteAction = false;
@@ -118,6 +126,9 @@ let missingMpvWarningShown = false;
 let suppressNextHtml5PauseSync = false;
 let currentLocalVideoMeta = null;
 let suppressRemoteEcho = false;
+let clockOffset = 0;
+let pingIntervalTimer = null;
+let smoothRateAdjustTimer = null;
 const renderedChatIds = new Set();
 const LOG_RETENTION_MS = 60 * 1000;
 const DEFAULT_VOLUME = 0.7;
@@ -139,9 +150,8 @@ const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "stun:stun.cloudflare.com:3478" },
-  { urls: "stun:stun.xten.com:3478" },
-  { urls: "turn:your-turn.example.com:3478", username: "turn-user", credential: "turn-password" },
-  { urls: "turns:your-turn.example.com:5349", username: "turn-user", credential: "turn-password" }
+  { urls: "stun:stun.syncthing.net:3478" },
+  { urls: "stun:stun.miwifi.com:3478" }
 ];
 const RTC_CONFIG = {
   iceServers: DEFAULT_ICE_SERVERS
@@ -500,7 +510,7 @@ const PRESET_NAME = URL_PARAMS.get("name")?.trim();
 const PRESET_SERVER = URL_PARAMS.get("server")?.trim();
 const PRESET_ICE = URL_PARAMS.get("ice")?.trim();
 const AUTO_JOIN_ROOM = PRESET_ROOM || "";
-const AUTO_CONNECT = Boolean(PRESET_SERVER || (AUTO_JOIN_ROOM && URL_PARAMS.get("autoconnect") === "1"));
+const AUTO_CONNECT = true;
 const SAVED_ICE_VALUE = localStorage.getItem("sync-ice-servers");
 const SAVED_VOLUME_VALUE = localStorage.getItem("sync-volume");
 const SAVED_VOLUME = SAVED_VOLUME_VALUE === null ? NaN : Number(SAVED_VOLUME_VALUE);
@@ -508,8 +518,8 @@ const SAVED_MUTED = localStorage.getItem("sync-muted") === "true";
 let danmakuVisible = localStorage.getItem("sync-danmaku-visible") !== "false";
 let shareUrlCleanupPending = Boolean(AUTO_JOIN_ROOM && URL_PARAMS.get("autoconnect") === "1");
 
-let roomMaxLimit = 1000;
-let bypassLimits = location.hostname === "remote-co-viewing.onrender.com";
+let roomMaxLimit = 10000;
+let bypassLimits = true;
 
 async function fetchConfig() {
   try {
@@ -517,19 +527,18 @@ async function fetchConfig() {
     const data = await res.json();
     if (data) {
       bypassLimits = !!data.bypassLimits;
-      roomMaxLimit = typeof data.roomMax === "number" ? data.roomMax : 1000;
+      roomMaxLimit = typeof data.roomMax === "number" ? data.roomMax : 10000;
     }
   } catch (err) {
-    console.error("加载配置失败:", err);
+    // Local offline mode
   }
 }
 fetchConfig();
 
-const DEFAULT_ROOM = AUTO_JOIN_ROOM || (localStorage.getItem("sync-room")?.startsWith("movie-room") ? localStorage.getItem("sync-room") : null) || generateRoomId();
+const DEFAULT_ROOM = AUTO_JOIN_ROOM || localStorage.getItem("sync-room") || generateRoomId();
 const DEFAULT_NAME = PRESET_NAME || localStorage.getItem("sync-name") || `用户${Math.floor(Math.random() * 900 + 100)}`;
 
 roomInput.value = DEFAULT_ROOM;
-roomInput.readOnly = true;
 nameInput.value = DEFAULT_NAME;
 serverUrlInput.value = PRESET_SERVER || buildDefaultWsUrl();
 video.volume = Number.isFinite(SAVED_VOLUME) && SAVED_VOLUME > 0
@@ -779,11 +788,31 @@ function updateMpvModeUi() {
 }
 
 function buildDefaultWsUrl() {
-  return "wss://remote-co-viewing.onrender.com/ws";
+  if (desktopBridge && desktopBridge.wsUrl) {
+    return desktopBridge.wsUrl;
+  }
+  if (typeof location !== "undefined" && location.hostname) {
+    const isLocalhost = /^(127\.0\.0\.1|localhost|0\.0\.0\.0|::1)$/.test(location.hostname);
+    if (isLocalhost) {
+      return `ws://${location.host}/ws`;
+    }
+    const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${wsProto}//${location.host}/ws`;
+  }
+  return "ws://127.0.0.1:5050/ws";
 }
 
 function buildDefaultPublicWebUrl() {
-  return "https://remote-co-viewing.onrender.com";
+  if (desktopBridge && desktopBridge.httpBaseUrl) {
+    return desktopBridge.httpBaseUrl;
+  }
+  if (typeof location !== "undefined" && location.hostname) {
+    const isLocalhost = /^(127\.0\.0\.1|localhost|0\.0\.0\.0|::1)$/.test(location.hostname);
+    if (!isLocalhost) {
+      return `${location.protocol}//${location.host}`;
+    }
+  }
+  return "http://localhost:5050";
 }
 
 // Check if the current server is the default public server to toggle warnings
@@ -811,7 +840,7 @@ function hideSponsorModal() {
 }
 
 function generateRoomId() {
-  return `movie-room${Math.floor(Math.random() * 10001)}`;
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 function showCallFailureAlert(error, fallbackMessage = "连麦失败，请检查麦克风权限和网络连接。") {
@@ -871,10 +900,27 @@ function parseIceServersValue(value) {
     .map((urls) => ({ urls }));
 }
 
+let dynamicIceServers = null;
+
+async function fetchIceServersConfig() {
+  try {
+    const res = await fetch("/api/ice-servers");
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+        dynamicIceServers = data.iceServers;
+      }
+    }
+  } catch {}
+}
+
 function buildRtcConfig() {
   const configuredIceServers = parseIceServersValue(PRESET_ICE || SAVED_ICE_VALUE);
   if (configuredIceServers.length > 0) {
     return { iceServers: configuredIceServers };
+  }
+  if (dynamicIceServers && dynamicIceServers.length > 0) {
+    return { iceServers: dynamicIceServers };
   }
   return RTC_CONFIG;
 }
@@ -934,47 +980,27 @@ function formatTime(seconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function buildInviteLink(roomId, clean = false) {
-  const currentRoom = roomId || roomInput.value.trim() || "movie-room";
+function buildInviteLink(roomId) {
+  const currentRoom = roomId || roomInput.value.trim() || "8888";
   const currentServer = serverUrlInput?.value.trim() || "";
   
-  // Determine base web URL dynamically from server address
-  let base = buildDefaultPublicWebUrl().replace(/\/$/, "");
-  if (currentServer) {
-    try {
-      const wsUrl = new URL(currentServer);
-      if (wsUrl.protocol === "wss:" || wsUrl.protocol === "ws:") {
-        const httpProto = wsUrl.protocol === "wss:" ? "https:" : "http:";
-        base = `${httpProto}//${wsUrl.host}`;
-      }
-    } catch (e) {
-      // Fallback to default public web url if parsing fails
-    }
+  if (!currentServer || currentServer.includes("remote-co-viewing.onrender.com")) {
+    return `https://remote-co-viewing.onrender.com/?room=${encodeURIComponent(currentRoom)}&autoconnect=1`;
   }
   
-  const isLocalhost = /^(127\.0\.0\.1|localhost|0\.0\.0\.0|::1)$/.test(location.hostname);
-  const isLan = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(location.hostname);
-  
-  let link = `${base}/?room=${encodeURIComponent(currentRoom)}&autoconnect=1`;
-  
-  if (currentServer && !currentServer.includes("127.0.0.1") && !currentServer.includes("localhost")) {
-    link += `&server=${encodeURIComponent(currentServer)}`;
+  try {
+    const wsUrl = new URL(currentServer);
+    const httpProto = wsUrl.protocol === "wss:" ? "https:" : "http:";
+    return `${httpProto}//${wsUrl.host}/?room=${encodeURIComponent(currentRoom)}&autoconnect=1&server=${encodeURIComponent(currentServer)}`;
+  } catch {
+    return `https://remote-co-viewing.onrender.com/?room=${encodeURIComponent(currentRoom)}&autoconnect=1`;
   }
-
-  if (!clean) {
-    if (isLocalhost) {
-      return `[该本地地址 ${location.hostname} 无法分享给异地朋友，请使用公网域名或局域网IP] ${link}`;
-    }
-    if (isLan) {
-      return `[仅限同局域网内可用] ${link}`;
-    }
-  }
-  return link;
 }
 
 function updateInviteLink() {
   if (!inviteText) return;
-  inviteText.textContent = buildInviteLink(roomInput?.value.trim() || "movie-room");
+  const link = buildInviteLink(roomInput?.value.trim() || "8888");
+  inviteText.textContent = link;
 }
 
 function isBilibiliLink(url) {
@@ -1236,14 +1262,12 @@ async function tryAutoPlayLoadedVideo() {
 
 function connect() {
   const roomVal = roomInput.value.trim();
-  if (!bypassLimits) {
-    const num = parseInt(roomVal, 10);
-    if (!/^\d+$/.test(roomVal) || isNaN(num) || num < 0 || num > roomMaxLimit) {
-      log("房间号不符合规范，请输入 0 到 " + roomMaxLimit + " 之间的纯数字");
-      return;
-    }
+  if (!roomVal) {
+    log("请输入有效的房间号");
+    return;
   }
 
+  void fetchIceServersConfig();
   updateServerWarning();
   clearTimeout(reconnectTimer);
   reconnectTimer = null;
@@ -1278,7 +1302,25 @@ function connect() {
 
   socket = activeSocket;
 
+  let connectionTimeoutTimer = setTimeout(() => {
+    if (!joined && activeSocket === socket && activeSocket.readyState !== WebSocket.OPEN) {
+      log("连接服务器超时，请检查网络或点击「高级」切换服务");
+      setStatus("连接超时", false);
+      connectButton.disabled = false;
+      try { activeSocket.close(); } catch {}
+    }
+  }, 5000);
+
+  function sendPing() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type: "ping",
+      clientTime: Date.now()
+    }));
+  }
+
   activeSocket.addEventListener("open", () => {
+    clearTimeout(connectionTimeoutTimer);
     if (attempt !== connectAttempt || activeSocket !== socket) return;
     activeSocket.send(JSON.stringify({
       type: "join",
@@ -1286,6 +1328,9 @@ function connect() {
       name: displayName,
       sessionToken: getOrCreateHostToken(room)
     }));
+    sendPing();
+    if (pingIntervalTimer) clearInterval(pingIntervalTimer);
+    pingIntervalTimer = setInterval(sendPing, 10000);
   });
 
   activeSocket.addEventListener("message", (event) => {
@@ -1301,7 +1346,16 @@ function connect() {
   });
 
   activeSocket.addEventListener("close", () => {
+    clearTimeout(connectionTimeoutTimer);
     if (attempt !== connectAttempt || activeSocket !== socket) return;
+    if (pingIntervalTimer) {
+      clearInterval(pingIntervalTimer);
+      pingIntervalTimer = null;
+    }
+    if (smoothRateAdjustTimer) {
+      clearTimeout(smoothRateAdjustTimer);
+      smoothRateAdjustTimer = null;
+    }
     joined = false;
     joinPending = false;
     isHost = false;
@@ -1309,7 +1363,7 @@ function connect() {
     socket = null;
     endRtcCall(false);
     connectButton.disabled = false;
-  setStatus("连接中", false);
+  setStatus("未连接", false);
   log(suppressAutoReconnect ? "连接已断开" : "连接已断开，正在尝试重连...");
     if (!suppressAutoReconnect) {
       reconnectTimer = setTimeout(() => {
@@ -1319,18 +1373,41 @@ function connect() {
   });
 
   activeSocket.addEventListener("error", () => {
+    clearTimeout(connectionTimeoutTimer);
     if (attempt !== connectAttempt || activeSocket !== socket) return;
-  setStatus("连接中", false);
+  setStatus("连接失败", false);
+  connectButton.disabled = false;
   log("连接失败，请检查服务器地址或网络");
   });
 }
 
+const pingSamples = [];
+
 async function handleMessage(message) {
+  if (message.type === "pong") {
+    const now = Date.now();
+    const clientSent = Number(message.clientTime || now);
+    const rtt = Math.max(0, now - clientSent);
+    const serverTime = Number(message.serverTime || now);
+    const sampleOffset = serverTime - (clientSent + rtt / 2);
+
+    pingSamples.push({ rtt, offset: sampleOffset });
+    if (pingSamples.length > 5) pingSamples.shift();
+
+    const sorted = [...pingSamples].sort((a, b) => a.rtt - b.rtt);
+    const medianSample = sorted[Math.floor(sorted.length / 2)];
+    clockOffset = medianSample.offset;
+    return;
+  }
+
   if (message.type === "joined") {
     joined = true;
     joinPending = false;
     clientId = message.clientId;
     isHost = Boolean(message.isHost);
+    currentRoomEpoch = message.roomEpoch || null;
+    currentStateVersion = message.stateVersion || 0;
+    currentMediaVersion = message.mediaVersion || 0;
     if (shareUrlCleanupPending) {
       window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}`);
       shareUrlCleanupPending = false;
@@ -1352,7 +1429,7 @@ async function handleMessage(message) {
     }
       log(`已进入房间 ${message.room}${isHost ? "（房主）" : ""}`);
     if (isHost) {
-      log("你是当前房间 of 房主，后续访客需要你审核后才能进入。");
+      log("你是当前房间房主，后续访客需要你审核后才能进入。");
     }
     return;
   }
@@ -1399,11 +1476,24 @@ async function handleMessage(message) {
   }
 
   if (message.type === "state") {
+    if (message.roomEpoch && currentRoomEpoch && message.roomEpoch === currentRoomEpoch) {
+      if (typeof message.stateVersion === "number" && message.stateVersion < currentStateVersion) {
+        return; // Drop outdated out-of-order state
+      }
+      currentStateVersion = Math.max(currentStateVersion, message.stateVersion || 0);
+    }
+    if (typeof message.mediaVersion === "number") {
+      currentMediaVersion = Math.max(currentMediaVersion, message.mediaVersion);
+    }
+
     lastRemoteState = { state: message.state, serverTime: message.serverTime };
     restoreSharedMediaIfNeeded(message.media, message.reason || "state");
     if (message.actor && message.actor.id === clientId) return;
     applyRemoteState(message.state, message.serverTime, message.reason);
-    if (message.actor) log(`${message.actor.name} ${message.state.paused ? "暂停" : "播放"}`);
+    if (message.actor && message.reason !== "tick") {
+      const actionText = message.reason === "seek" ? "跳转了进度" : (message.state?.paused ? "暂停了播放" : "恢复了播放");
+      log(`[协同控制] ${message.actor.name} ${actionText}`);
+    }
     return;
   }
 
@@ -1417,19 +1507,33 @@ async function handleMessage(message) {
   }
 
   if (message.type === "load_video") {
+    if (message.roomEpoch && currentRoomEpoch && message.roomEpoch !== currentRoomEpoch) {
+      log("收到来自其他周期的换片消息，已忽略");
+      return;
+    }
+    if (typeof message.stateVersion === "number" && message.stateVersion < currentStateVersion) {
+      log("收到过期的换片消息，已忽略");
+      return;
+    }
+    if (typeof message.stateVersion === "number") {
+      currentStateVersion = Math.max(currentStateVersion, message.stateVersion);
+    }
+    if (typeof message.mediaVersion === "number") {
+      currentMediaVersion = Math.max(currentMediaVersion, message.mediaVersion);
+    }
     clearPendingBilibiliResolve();
     const shouldResetPlayback = shouldResetPlaybackForMedia(message.url, message.cid, message.resetPlayback);
     if (shouldResetPlayback) {
       lastRemoteState = null;
       forceResetPlaybackOnLoad = true;
     }
-      const loaded = executeLoadVideo(message.url, message.title || "网络视频", true, message.cid);
+    const loaded = executeLoadVideo(message.url, message.title || "网络视频", true, message.cid);
     if (!loaded && shouldResetPlayback) {
       activePlayer.seekTo(0);
       activePlayer.pause();
       updatePlayIcon();
     }
-      if (loaded) log(`已同步加载视频：${message.title || "网络视频"}`);
+    if (loaded) log(`已同步加载视频：${message.title || "网络视频"}`);
     return;
   }
 
@@ -1477,9 +1581,13 @@ function renderClients(clients) {
   }
 }
 
-function targetTimeFromState(state) {
+function targetTimeFromState(state, serverTime) {
   if (!state) return 0;
-  return state.time || 0;
+  if (state.paused) return state.time || 0;
+  const now = Date.now();
+  const adjustedServerTime = Number(serverTime || now) - clockOffset;
+  const elapsed = Math.max(0, (now - adjustedServerTime) / 1000);
+  return Math.max(0, (state.time || 0) + elapsed * (state.rate || 1));
 }
 
 async function applyRemoteState(state, serverTime, reason) {
@@ -1502,12 +1610,21 @@ async function applyRemoteState(state, serverTime, reason) {
     return;
   }
 
-  const target = targetTimeFromState(state);
-  const drift = Math.abs(activePlayer.getCurrentTime() - target);
-  // Relax the sync threshold during normal playback to prevent micro-stutters from minor buffering
-  const shouldSeek = reason !== "tick" || drift > 2.5;
+  const target = targetTimeFromState(state, serverTime);
+  const currentTime = activePlayer.getCurrentTime();
+  const drift = Math.abs(currentTime - target);
+  const baseRate = state.rate || 1;
 
-  console.log(`[mpv-sync] apply remote action=${reason} targetTime=${target} paused=${state.paused}`);
+  if (smoothRateAdjustTimer) {
+    clearTimeout(smoothRateAdjustTimer);
+    smoothRateAdjustTimer = null;
+  }
+
+  const isLargeDrift = drift > 2.0;
+  const isSeekOrJoin = reason === "seek" || reason === "join" || reason === "manual" || reason === "file-loaded";
+  const shouldSeek = state.paused ? (drift > 0.3) : (isSeekOrJoin || isLargeDrift);
+
+  console.log(`[mpv-sync] apply remote action=${reason} targetTime=${target} paused=${state.paused} drift=${drift}`);
 
   suppressRemoteEcho = true;
   isRemoteAction = true;
@@ -1517,12 +1634,26 @@ async function applyRemoteState(state, serverTime, reason) {
   }
 
   try {
-    if (!isUsingControlledMpv()) {
-      video.playbackRate = state.rate || 1;
-    }
     if (shouldSeek && Number.isFinite(target)) {
       remoteSeekTarget = target;
       activePlayer.seekTo(Math.min(target, activePlayer.getDuration() || target));
+      if (!isUsingControlledMpv()) {
+        video.playbackRate = baseRate;
+      }
+    } else if (!state.paused && !isUsingControlledMpv()) {
+      // Smooth rate catch-up for moderate drift (0.25s ~ 2.0s)
+      if (drift > 0.25) {
+        const catchupFactor = currentTime < target ? 1.04 : 0.96;
+        video.playbackRate = baseRate * catchupFactor;
+        const catchupDurationMs = Math.min(5000, Math.max(1000, Math.round((drift / 0.04) * 1000)));
+        smoothRateAdjustTimer = setTimeout(() => {
+          if (!activePlayer.isPaused() && !isUsingControlledMpv()) {
+            video.playbackRate = baseRate;
+          }
+        }, catchupDurationMs);
+      } else {
+        video.playbackRate = baseRate;
+      }
     }
 
     if (state.paused) {
@@ -2219,7 +2350,12 @@ function createPeerConnection() {
       applyRtcVideoQualityProfile(rtcVideoQualityLevel).catch(() => {});
       log("连麦已建立");
     } else if (state === "failed" || state === "disconnected") {
-      log("连麦连接不稳定，正在等待浏览器恢复");
+      log("连麦连接不稳定，正在尝试恢复");
+      if (peerConnection && typeof peerConnection.restartIce === "function" && callActive && !makingOffer) {
+        try {
+          peerConnection.restartIce();
+        } catch {}
+      }
     } else if (state === "closed") {
       stopRtcQualityMonitor();
       callActive = false;
@@ -2328,6 +2464,7 @@ async function handleRtcSignal(message) {
 
   if (message.type === "rtc_offer") {
     try {
+      await ensureLocalCallStream();
       const pc = createPeerConnection();
       const offerCollision = makingOffer || pc.signalingState !== "stable";
       const polite = String(clientId || "") > String(message.sender?.id || "");
@@ -2348,7 +2485,7 @@ async function handleRtcSignal(message) {
     } catch (error) {
       log(`接听连麦失败：${error.message || "WebRTC 握手失败"}`);
       showCallFailureAlert(error, "WebRTC 握手失败");
-      endRtcCall(false);
+      endRtcCall(true);
     }
     return;
   }
@@ -2482,19 +2619,61 @@ if (localStorage.getItem("has_seen_guide") !== "true") {
   localStorage.setItem("has_seen_guide", "true");
 }
 
-roomInput.addEventListener("input", (e) => {
-  if (!bypassLimits) {
-    let val = e.target.value.replace(/\D/g, "");
-    if (val !== "") {
-      const num = parseInt(val, 10);
-      if (num > roomMaxLimit) {
-        val = String(roomMaxLimit);
-      }
-    }
-    e.target.value = val;
-  }
+if (randomRoomBtn) {
+  randomRoomBtn.addEventListener("click", () => {
+    roomInput.value = generateRoomId();
+    updateInviteLink();
+    connect();
+  });
+}
+
+if (toggleAdvancedBtn && advancedPanel) {
+  toggleAdvancedBtn.addEventListener("click", () => {
+    const isHidden = advancedPanel.style.display === "none";
+    advancedPanel.style.display = isHidden ? "block" : "none";
+    toggleAdvancedBtn.textContent = isHidden ? "▲ 收起" : "⚙️ 高级";
+  });
+}
+
+roomInput.addEventListener("input", () => {
   updateInviteLink();
 });
+
+roomInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    connect();
+  }
+});
+
+nameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    connect();
+  }
+});
+
+if (useCloudServerBtn) {
+  useCloudServerBtn.addEventListener("click", () => {
+    serverUrlInput.value = "wss://remote-co-viewing.onrender.com/ws";
+    useCloudServerBtn.classList.add("btn-primary");
+    if (useLocalServerBtn) useLocalServerBtn.classList.remove("btn-primary");
+    updateInviteLink();
+    updateServerWarning();
+    connect();
+  });
+}
+
+if (useLocalServerBtn) {
+  useLocalServerBtn.addEventListener("click", () => {
+    serverUrlInput.value = "ws://127.0.0.1:5050/ws";
+    useLocalServerBtn.classList.add("btn-primary");
+    if (useCloudServerBtn) useCloudServerBtn.classList.remove("btn-primary");
+    updateInviteLink();
+    updateServerWarning();
+    connect();
+  });
+}
 
 if (serverUrlInput) {
   serverUrlInput.addEventListener("input", () => {
@@ -2502,6 +2681,12 @@ if (serverUrlInput) {
     updateServerWarning();
   });
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: "ping", clientTime: Date.now() }));
+  }
+});
 
 if (inviteBtn) {
   inviteBtn.addEventListener("click", async () => {
@@ -2879,6 +3064,7 @@ updatePlayIcon();
 updateTimeReadout();
 updateMpvModeUi();
 initControlsAutohide();
+void fetchIceServersConfig();
 
 if (AUTO_CONNECT) {
   connect();

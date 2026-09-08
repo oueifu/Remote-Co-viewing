@@ -1,5 +1,11 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (C) 2026 Q Credit
+const http = require("node:http");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+const { spawn } = require("node:child_process");
+const { app, BrowserWindow, dialog, ipcMain, protocol, session, net } = require("electron");
+
 // Load environment variables from .env file if it exists
 try {
   const envPath = path.join(__dirname, "..", ".env");
@@ -17,14 +23,10 @@ try {
   }
 } catch {}
 
-const http = require("node:http");
-const crypto = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
-const { pathToFileURL } = require("node:url");
-const { spawn } = require("node:child_process");
-const { app, BrowserWindow, dialog, ipcMain, protocol, session, net } = require("electron");
 const { MpvController } = require("./mpv-controller");
+
+const LOOPBACK_AUTH_TOKEN = process.env.SYNC_CINEMA_LOCAL_TOKEN || crypto.randomBytes(24).toString("hex");
+process.env.SYNC_CINEMA_LOCAL_TOKEN = LOOPBACK_AUTH_TOKEN;
 
 const PORT = Number(process.env.SYNC_CINEMA_PORT || 5050);
 const SERVER_URL = `http://127.0.0.1:${PORT}`;
@@ -144,12 +146,18 @@ function createMainWindow() {
       preload: PRELOAD_ENTRY,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       autoplayPolicy: "no-user-gesture-required"
     }
   });
 
   mainWindow.loadURL(SERVER_URL);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (!targetUrl.startsWith(SERVER_URL)) {
+      event.preventDefault();
+    }
+  });
   configureDevelopmentDevTools(mainWindow);
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -291,9 +299,8 @@ function registerLocalMovieProtocol() {
       return new Response("Unknown local movie id", { status: 404 });
     }
 
-    process.stdout.write(`[desktop-protocol] resolved filePath=${filePath}\n`);
     if (!fs.existsSync(filePath)) {
-      process.stderr.write(`[desktop-protocol] 404 missing-file id=${movieId} filePath=${filePath}\n`);
+      process.stderr.write(`[desktop-protocol] 404 missing-file id=${movieId}\n`);
       return new Response("Missing local movie file", { status: 404 });
     }
 
@@ -301,8 +308,21 @@ function registerLocalMovieProtocol() {
   });
 }
 
+function validateSender(senderFrame) {
+  if (!senderFrame || typeof senderFrame.url !== "string") return false;
+  try {
+    const frameUrl = new URL(senderFrame.url);
+    const expectedUrl = new URL(SERVER_URL);
+    return frameUrl.origin === expectedUrl.origin;
+  } catch {
+    return false;
+  }
+}
+
 function registerDesktopIpc() {
-  ipcMain.handle("desktop:choose-local-video", async () => {
+  ipcMain.handle("desktop:choose-local-video", async (event) => {
+    if (!validateSender(event.senderFrame)) throw new Error("Unauthorized IPC caller");
+
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "选择本地电影文件",
       properties: ["openFile"],
@@ -321,7 +341,7 @@ function registerDesktopIpc() {
     const movieId = crypto.randomUUID();
     const movieUrl = `${LOCAL_MOVIE_PROTOCOL}://movie/${movieId}`;
     localMovieFiles.set(movieId, filePath);
-    process.stdout.write(`[desktop-protocol] registered url=${movieUrl} filePath=${filePath}\n`);
+    process.stdout.write(`[desktop-protocol] registered movieId=${movieId}\n`);
 
     return {
       path: filePath,
@@ -331,7 +351,9 @@ function registerDesktopIpc() {
     };
   });
 
-  ipcMain.handle("desktop:open-in-mpv", async (_event, filePath) => {
+  ipcMain.handle("desktop:open-in-mpv", async (event, filePath) => {
+    if (!validateSender(event.senderFrame)) throw new Error("Unauthorized IPC caller");
+
     const targetPath = String(filePath || "").trim();
     if (!targetPath) {
       return { ok: false, message: "缺少本地视频路径，无法唤起 mpv" };
@@ -363,7 +385,9 @@ function registerDesktopIpc() {
     return { ok: true, binaryPath: resolvedBinary };
   });
 
-  ipcMain.handle("desktop:open-in-controlled-mpv", async (_event, filePath) => {
+  ipcMain.handle("desktop:open-in-controlled-mpv", async (event, filePath) => {
+    if (!validateSender(event.senderFrame)) throw new Error("Unauthorized IPC caller");
+
     try {
       if (controlledMpv) {
         await controlledMpv.stop();
@@ -394,7 +418,9 @@ function registerDesktopIpc() {
     }
   });
 
-  ipcMain.handle("desktop:controlled-mpv-command", async (_event, command, value) => {
+  ipcMain.handle("desktop:controlled-mpv-command", async (event, command, value) => {
+    if (!validateSender(event.senderFrame)) throw new Error("Unauthorized IPC caller");
+
     if (!controlledMpv) {
       return { ok: false, message: "受控 mpv 尚未启动" };
     }
@@ -428,7 +454,9 @@ function registerDesktopIpc() {
     }
   });
 
-  ipcMain.handle("desktop:stop-controlled-mpv", async () => {
+  ipcMain.handle("desktop:stop-controlled-mpv", async (event) => {
+    if (!validateSender(event.senderFrame)) throw new Error("Unauthorized IPC caller");
+
     if (!controlledMpv) return { ok: true };
     try {
       await controlledMpv.stop();
@@ -444,7 +472,9 @@ function registerDesktopIpc() {
   });
 
   // Resize the Electron window when entering/exiting external player controller mode.
-  ipcMain.handle("desktop:set-controller-mode", (_event, enabled) => {
+  ipcMain.handle("desktop:set-controller-mode", (event, enabled) => {
+    if (!validateSender(event.senderFrame)) throw new Error("Unauthorized IPC caller");
+
     if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
     if (enabled) {
       mainWindow.setMinimumSize(300, 200);
@@ -458,7 +488,9 @@ function registerDesktopIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle("desktop:toggle-devtools", () => {
+  ipcMain.handle("desktop:toggle-devtools", (event) => {
+    if (!validateSender(event.senderFrame)) throw new Error("Unauthorized IPC caller");
+
     if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
     if (mainWindow.webContents.isDevToolsOpened()) {
       mainWindow.webContents.closeDevTools();
@@ -470,11 +502,26 @@ function registerDesktopIpc() {
 }
 
 function configureDesktopSession() {
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === "media" || permission === "fullscreen");
+  const allowedPermissions = new Set(["media", "audioCapture", "videoCapture", "fullscreen", "notifications"]);
+  const expectedOrigin = new URL(SERVER_URL).origin;
+
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    if (!allowedPermissions.has(permission)) {
+      callback(false);
+      return;
+    }
+    const requestingUrl = details?.requestingUrl || (webContents && webContents.getURL ? webContents.getURL() : "");
+    try {
+      const origin = new URL(requestingUrl).origin;
+      callback(origin === expectedOrigin && details?.isMainFrame !== false);
+    } catch {
+      callback(false);
+    }
   });
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    return permission === "media" || permission === "fullscreen";
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+    if (!allowedPermissions.has(permission)) return false;
+    return requestingOrigin === expectedOrigin;
   });
 }
 

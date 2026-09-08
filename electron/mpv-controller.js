@@ -36,7 +36,7 @@ function resolveMpvPath(configuredPath = process.env.SYNC_CINEMA_MPV_PATH || "mp
   if (!configuredValue) return "";
 
   if (path.isAbsolute(configuredValue) && fs.existsSync(configuredValue)) {
-    log(`resolved mpv path from absolute config: ${configuredValue}`);
+    log("resolved mpv path from absolute config");
     return configuredValue;
   }
 
@@ -47,7 +47,7 @@ function resolveMpvPath(configuredPath = process.env.SYNC_CINEMA_MPV_PATH || "mp
   for (const name of preferredNames) {
     const resolved = findExecutableInPath(name);
     if (resolved) {
-      log(`resolved mpv path from PATH: ${resolved}`);
+      log("resolved mpv path from PATH");
       return resolved;
     }
   }
@@ -63,7 +63,7 @@ function resolveMpvPath(configuredPath = process.env.SYNC_CINEMA_MPV_PATH || "mp
 
     for (const candidate of windowsCandidates) {
       if (candidate && fs.existsSync(candidate)) {
-        log(`resolved mpv path from Windows candidates: ${candidate}`);
+        log("resolved mpv path from Windows candidates");
         return candidate;
       }
     }
@@ -97,6 +97,9 @@ class MpvController {
     this.buffer = "";
     this.nextRequestId = 1;
     this.pendingRequests = new Map();
+    this.cachedTimePos = 0;
+    this.cachedDuration = 0;
+    this.cachedPause = true;
   }
 
   static resolveMpvPath(configuredPath) {
@@ -128,9 +131,9 @@ class MpvController {
       targetPath
     ];
 
-    log(`starting mpv path=${resolvedMpvPath}`);
-    log(`pipe path=${this.pipePath}`);
-    log(`spawn args=${JSON.stringify(args)}`);
+    log(`starting mpv binary=${path.basename(resolvedMpvPath)}`);
+    log(`ipc pipe initialized`);
+    log(`media format=${path.extname(targetPath)}`);
 
     this.process = spawn(resolvedMpvPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -158,6 +161,9 @@ class MpvController {
     });
 
     await this.connectPipeWithRetry();
+    await this.command(["observe_property", 1, "pause"]).catch(() => {});
+    await this.command(["observe_property", 2, "time-pos"]).catch(() => {});
+    await this.command(["observe_property", 3, "duration"]).catch(() => {});
     return {
       ok: true,
       mpvPath: resolvedMpvPath,
@@ -237,6 +243,17 @@ class MpvController {
       return;
     }
 
+    if (message.event === "property-change") {
+      if (message.name === "time-pos" && typeof message.data === "number") {
+        this.cachedTimePos = message.data;
+      } else if (message.name === "pause" && typeof message.data === "boolean") {
+        this.cachedPause = message.data;
+      } else if (message.name === "duration" && typeof message.data === "number") {
+        this.cachedDuration = message.data;
+      }
+      return;
+    }
+
     const requestId = message.request_id;
     if (!requestId || !this.pendingRequests.has(requestId)) return;
 
@@ -284,10 +301,12 @@ class MpvController {
   }
 
   play() {
+    this.cachedPause = false;
     return this.command(["set_property", "pause", false]);
   }
 
   pause() {
+    this.cachedPause = true;
     return this.command(["set_property", "pause", true]);
   }
 
@@ -296,19 +315,35 @@ class MpvController {
     if (!Number.isFinite(target)) {
       return Promise.reject(new Error(`Invalid seek target: ${seconds}`));
     }
+    this.cachedTimePos = Math.max(0, target);
     return this.command(["set_property", "time-pos", Math.max(0, target)]);
   }
 
-  getTimePos() {
-    return this.command(["get_property", "time-pos"]);
+  async getTimePos() {
+    if (typeof this.cachedTimePos === "number" && this.cachedTimePos >= 0) {
+      return this.cachedTimePos;
+    }
+    const val = await this.command(["get_property", "time-pos"]).catch(() => null);
+    if (typeof val === "number") this.cachedTimePos = val;
+    return typeof val === "number" ? val : (this.cachedTimePos || 0);
   }
 
-  getDuration() {
-    return this.command(["get_property", "duration"]);
+  async getDuration() {
+    if (typeof this.cachedDuration === "number" && this.cachedDuration > 0) {
+      return this.cachedDuration;
+    }
+    const val = await this.command(["get_property", "duration"]).catch(() => null);
+    if (typeof val === "number") this.cachedDuration = val;
+    return typeof val === "number" ? val : (this.cachedDuration || 0);
   }
 
-  getPauseState() {
-    return this.command(["get_property", "pause"]);
+  async getPauseState() {
+    if (typeof this.cachedPause === "boolean") {
+      return this.cachedPause;
+    }
+    const val = await this.command(["get_property", "pause"]).catch(() => null);
+    if (typeof val === "boolean") this.cachedPause = val;
+    return typeof val === "boolean" ? val : (this.cachedPause ?? true);
   }
 
   async stop() {

@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: local-movie: https:; connect-src 'self' ws: wss: http: https:; font-src 'self';">
     <title>SyncCinema - 异地同步观影</title>
     <link rel="stylesheet" href="/styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/danmaku/dist/danmaku.min.js"></script>
 </head>
 <body>
     <button id="help-btn" type="button" class="btn icon-btn" data-i18n="help" title="使用说明" style="position:fixed;right:16px;bottom:16px;z-index:1000;font-size:20px;border-radius:50%;width:40px;height:40px;background:#111827;color:#fff;display:flex;align-items:center;justify-content:center;padding:0;">❓</button>
@@ -112,27 +112,39 @@
             </div>
 
             <div class="room-header glass-card">
-                <div class="section-title" data-i18n="room_settings">房间与配置</div>
-                <div class="input-row-group">
-                    <input type="text" id="room-input" class="custom-input" placeholder="房间号 (0-1000)" value="">
-                    <input type="text" id="name-input" class="custom-input" placeholder="昵称" value="用户">
+                <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span data-i18n="room_settings">观影房间</span>
+                    <button id="toggle-advanced-btn" type="button" class="btn text-btn" style="font-size:12px; padding:2px 8px; color:#9ca3af; background:rgba(255,255,255,0.06); border:none; border-radius:6px;" title="展开/收起高级设置">⚙️ 高级</button>
                 </div>
                 <div class="input-row-group">
-                    <input type="text" id="server-input" class="custom-input" placeholder="服务器地址">
-                    <button id="connect-btn" type="button" class="btn btn-primary" data-i18n="connect">连接</button>
+                    <input type="text" id="name-input" class="custom-input" placeholder="我的昵称" value="用户" style="flex:1;">
+                    <div style="display:flex; flex:1.2; gap:4px;">
+                        <input type="text" id="room-input" class="custom-input" placeholder="房间号 (如 8888)" value="" style="flex:1;">
+                        <button id="random-room-btn" type="button" class="btn" title="随机生成新房间号" style="padding:0 10px; font-size:16px;">🎲</button>
+                    </div>
                 </div>
-                <p id="server-beta-warning" class="hint" style="color: #f59e0b; margin-top: 4px; line-height: 1.4; display: none;">⚠️ 当前连接为作者免费测试服务器，可能存在休眠或限流，建议自行部署以获得最佳体验。</p>
-                <div class="input-row-group">
-                    <select id="lang-switch" class="custom-input" aria-label="Language">
-                        <option value="zh">中文</option>
-                        <option value="en">English</option>
-                        <option value="ja">日本語</option>
-                    </select>
-                </div>
-                <button id="invite-btn" type="button" class="invite-link-box">
-                    <span id="invite-text" class="invite-text">等待生成邀请链接...</span>
+                <button id="invite-btn" type="button" class="invite-link-box" style="margin-top:8px;">
+                    <span id="invite-text" class="invite-text">点击复制邀请链接给好友...</span>
                     <span class="invite-copy" data-i18n="copy">复制</span>
                 </button>
+                <div id="advanced-settings-panel" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.08);">
+                    <div style="display:flex; gap:6px; margin-bottom:8px;">
+                        <button id="use-cloud-server-btn" type="button" class="btn btn-primary" style="flex:1; font-size:12px; padding:6px 4px;" title="使用公网云端中继，异地好友开网页直接看">🌐 异地公网中继</button>
+                        <button id="use-local-server-btn" type="button" class="btn" style="flex:1; font-size:12px; padding:6px 4px;" title="使用本地服务 (127.0.0.1 / 局域网 / 自建穿透)">🏠 本地自建服务</button>
+                    </div>
+                    <div class="input-row-group">
+                        <input type="text" id="server-input" class="custom-input" placeholder="服务器地址">
+                        <button id="connect-btn" type="button" class="btn" data-i18n="connect">连接</button>
+                    </div>
+                    <div class="input-row-group" style="margin-top:6px;">
+                        <select id="lang-switch" class="custom-input" aria-label="Language">
+                            <option value="zh">🇨🇳 中文</option>
+                            <option value="en">🇺🇸 English</option>
+                            <option value="ja">🇯🇵 日本語</option>
+                        </select>
+                    </div>
+                    <p id="server-beta-warning" class="hint" style="color: #f59e0b; margin-top: 4px; line-height: 1.4; display: none;">⚠️ 当前连接为作者免费测试服务器，可能存在休眠或限流，建议自行部署以获得最佳体验。</p>
+                </div>
             </div>
 
             <div class="glass-card">
