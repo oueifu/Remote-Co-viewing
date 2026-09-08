@@ -18,8 +18,11 @@
 
 本项目自带原生的 Desktop App（桌面客户端），推荐使用桌面端以获得最佳的跨域权限和本地视频解码体验。
 
+### Windows 便携版
+从 GitHub Releases 下载 `SyncCinema-v0.9.0-beta.1-win-x64.zip` 后解压，双击根目录的 `SyncCinema.bat` 即可启动；它使用包内 Electron，不需要另行安装 Node.js。该版本是实验性 Beta，建议先在自己的设备上测试。
+
 ### 1. 环境准备
-- 安装 [Node.js](https://nodejs.org/) (建议 Node 22 或更高 LTS 版本)
+- 从源码运行时，安装 [Node.js](https://nodejs.org/) 22.12 或更高版本。
 
 ### 2. 获取代码与安装依赖
 ```bash

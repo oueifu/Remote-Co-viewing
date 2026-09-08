@@ -40,3 +40,6 @@ jobs:
 
       - name: Run Production Dependency Security Audit
         run: npm audit --omit=dev
+
+      - name: Run Full Dependency Security Audit
+        run: npm audit

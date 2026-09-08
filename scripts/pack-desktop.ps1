@@ -33,14 +33,15 @@ $FilesToCopy = @(
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     ".env.example",
-    "双击运行.bat"
+    "SyncCinema.bat"
 )
 
 foreach ($file in $FilesToCopy) {
     $src = Join-Path $ProjectRoot $file
-    if (Test-Path $src) {
-        Copy-Item -Path $src -Destination (Join-Path $TargetDir $file) -Force
+    if (-not (Test-Path -LiteralPath $src)) {
+        throw "Required release file is missing: $file"
     }
+    Copy-Item -LiteralPath $src -Destination (Join-Path $TargetDir $file) -Force
 }
 
 $DirsToCopy = @("public", "electron", "node_modules")
