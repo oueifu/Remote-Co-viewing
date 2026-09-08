@@ -896,6 +896,29 @@ select.custom-input option {
     text-shadow: 0 0 10px rgba(167, 139, 250, 0.52);
 }
 
+.invite-guidance {
+    display: grid;
+    gap: 3px;
+    margin-top: 7px;
+    padding: 8px 10px;
+    border: 1px solid rgba(245, 158, 11, 0.34);
+    border-radius: 8px;
+    background: rgba(120, 53, 15, 0.16);
+    color: #fcd34d;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.invite-guidance strong { color: #fde68a; }
+
+.invite-guidance.is-public {
+    border-color: rgba(52, 211, 153, 0.36);
+    background: rgba(6, 78, 59, 0.18);
+    color: #a7f3d0;
+}
+
+.invite-guidance.is-public strong { color: #d1fae5; }
+
 .hint {
     margin-top: 7px;
     color: #b8c1d5;

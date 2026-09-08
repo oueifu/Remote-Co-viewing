@@ -56,6 +56,9 @@ const devtoolsBtn = $("#devtools-btn");
 const sponsorModal = $("#sponsor-modal");
 const sponsorCloseBtn = $("#sponsor-close-btn");
 const serverBetaWarning = $("#server-beta-warning");
+const inviteGuidance = $("#invite-guidance");
+const inviteGuidanceTitle = $("#invite-guidance-title");
+const inviteGuidanceText = $("#invite-guidance-text");
 const randomRoomBtn = $("#random-room-btn");
 const toggleAdvancedBtn = $("#toggle-advanced-btn");
 const advancedPanel = $("#advanced-settings-panel");
@@ -421,6 +424,12 @@ const translations = {
     guide_step_1: "1. 第一个进入房间的人会成为管理员，之后的加入需要管理员同意。",
     guide_step_2: "2. 首次打开会自动生成随机房间号；只有通过分享链接或手动输入相同房间号，才会进入同一个房间。",
     guide_step_3: "3. 粘贴视频地址并点击加载，或双方各自选择同一个本地文件；当前每个房间最多 2 人，并支持聊天、同步播放和连麦。",
+    invite_scope_local_title: "本机链接",
+    invite_scope_local: "当前链接只在这台电脑上有效。异地：使用 Tailscale、Cloudflare Tunnel、ngrok 或 cpolar 获得公开 HTTPS 地址，填入对应的 wss://…/ws，点击“连接”后再复制链接。",
+    invite_scope_lan_title: "局域网链接",
+    invite_scope_lan: "当前链接只限同一局域网。异地好友需要公开 HTTPS/WSS 地址；配置后点击“连接”，再复制邀请链接。",
+    invite_scope_public_title: "可分享链接",
+    invite_scope_public: "此链接可分享给能访问该服务器的朋友。若要连麦，请使用 HTTPS/WSS 地址。",
     guide_close: "我知道了",
     sponsor_title: "支持开发者 ☕",
     sponsor_desc: "如果这个小插件让你和朋友度过了愉快的时光，欢迎请我喝杯咖啡！你的支持将用于维持服务器的运转。",
@@ -459,6 +468,12 @@ const translations = {
     guide_step_1: "1. The first person in a room becomes the admin, and later joins must be approved by the admin.",
     guide_step_2: "2. On first open, a random room ID is generated automatically; only a shared link or the same room ID will bring people into the same room.",
     guide_step_3: "3. Paste a video URL and click Load, or both choose the same local file. Each room currently supports up to 2 people with chat, synced playback, and calls.",
+    invite_scope_local_title: "Local-only link",
+    invite_scope_local: "This link works only on this computer. For remote friends, get a public HTTPS URL from Tailscale, Cloudflare Tunnel, ngrok, or cpolar; enter its matching wss://…/ws address, connect, then copy the link.",
+    invite_scope_lan_title: "LAN-only link",
+    invite_scope_lan: "This link works only on the same local network. Remote friends need a public HTTPS/WSS address; connect after configuring it, then copy the invite link.",
+    invite_scope_public_title: "Shareable link",
+    invite_scope_public: "This link can be shared with friends who can reach this server. Use HTTPS/WSS if you want to make calls.",
     guide_close: "Got it",
     sponsor_title: "Support the Developer ☕",
     sponsor_desc: "If this small app helped you and your friend enjoy a good time, feel free to buy me a coffee. Your support helps keep the server running.",
@@ -497,6 +512,12 @@ const translations = {
     guide_step_1: "1. 最初に入室した人が管理者になり、その後の参加は管理者の承認が必要です。",
     guide_step_2: "2. 初回表示時にはランダムなルーム番号が自動生成されます。共有リンクを開くか、同じルーム番号を入力した場合だけ同じ部屋に入れます。",
     guide_step_3: "3. 動画リンクを貼り付けて読み込むか、双方で同じローカルファイルを選びます。各ルームは最大 2 人までで、チャット、同期再生、通話に対応しています。",
+    invite_scope_local_title: "この端末専用リンク",
+    invite_scope_local: "このリンクはこの端末でのみ使えます。遠隔の友達には、Tailscale、Cloudflare Tunnel、ngrok、cpolar で公開 HTTPS アドレスを取得し、対応する wss://…/ws を入力して接続してからリンクをコピーしてください。",
+    invite_scope_lan_title: "LAN 内限定リンク",
+    invite_scope_lan: "このリンクは同じ LAN 内でのみ使えます。遠隔の友達には公開 HTTPS/WSS アドレスが必要です。設定後に接続し、招待リンクをコピーしてください。",
+    invite_scope_public_title: "共有可能なリンク",
+    invite_scope_public: "このサーバーにアクセスできる友達と共有できます。通話には HTTPS/WSS を使ってください。",
     guide_close: "わかりました",
     sponsor_title: "開発者を応援 ☕",
     sponsor_desc: "この小さなアプリで楽しい時間を過ごせたなら、コーヒーをごちそうしてもらえるとうれしいです。ご支援はサーバー維持に使われます。",
@@ -567,6 +588,7 @@ function updateLanguage(lang) {
   updateFullscreenButton();
   updateCallControls();
   updateMpvModeUiLabels();
+  updateInviteGuidance();
 }
 
 function isUsingControlledMpv() {
@@ -823,6 +845,37 @@ function updateServerWarning() {
   serverBetaWarning.style.display = isDefaultPublicServer ? "block" : "none";
 }
 
+function isLoopbackHost(hostname) {
+  const normalized = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "0.0.0.0" || normalized === "::1" || normalized === "127.0.0.1" || normalized.startsWith("127.");
+}
+
+function isPrivateNetworkHost(hostname) {
+  const normalized = String(hostname || "").toLowerCase();
+  if (/^10\./.test(normalized) || /^192\.168\./.test(normalized)) return true;
+  const match = normalized.match(/^172\.(\d{1,3})\./);
+  return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
+}
+
+function updateInviteGuidance() {
+  if (!inviteGuidance || !inviteGuidanceTitle || !inviteGuidanceText) return;
+  const currentServer = serverUrlInput?.value.trim() || buildDefaultWsUrl();
+  let hostname = "";
+  try {
+    hostname = new URL(currentServer).hostname;
+  } catch {
+    // Invalid values are handled by connect(); describe them conservatively as local-only here.
+  }
+
+  let scope = "public";
+  if (!hostname || isLoopbackHost(hostname)) scope = "local";
+  else if (isPrivateNetworkHost(hostname)) scope = "lan";
+
+  inviteGuidanceTitle.textContent = t(`invite_scope_${scope}_title`);
+  inviteGuidanceText.textContent = t(`invite_scope_${scope}`);
+  inviteGuidance.classList.toggle("is-public", scope === "public");
+}
+
 function showGuideModal() {
   if (guideModal) guideModal.style.display = "block";
 }
@@ -982,18 +1035,13 @@ function formatTime(seconds) {
 
 function buildInviteLink(roomId) {
   const currentRoom = roomId || roomInput.value.trim() || "8888";
-  const currentServer = serverUrlInput?.value.trim() || "";
-  
-  if (!currentServer || currentServer.includes("remote-co-viewing.onrender.com")) {
-    return `https://remote-co-viewing.onrender.com/?room=${encodeURIComponent(currentRoom)}&autoconnect=1`;
-  }
-  
+  const currentServer = serverUrlInput?.value.trim() || buildDefaultWsUrl();
   try {
     const wsUrl = new URL(currentServer);
     const httpProto = wsUrl.protocol === "wss:" ? "https:" : "http:";
     return `${httpProto}//${wsUrl.host}/?room=${encodeURIComponent(currentRoom)}&autoconnect=1&server=${encodeURIComponent(currentServer)}`;
   } catch {
-    return `https://remote-co-viewing.onrender.com/?room=${encodeURIComponent(currentRoom)}&autoconnect=1`;
+    return `${buildDefaultPublicWebUrl()}/?room=${encodeURIComponent(currentRoom)}&autoconnect=1`;
   }
 }
 
@@ -1001,6 +1049,7 @@ function updateInviteLink() {
   if (!inviteText) return;
   const link = buildInviteLink(roomInput?.value.trim() || "8888");
   inviteText.textContent = link;
+  updateInviteGuidance();
 }
 
 function isBilibiliLink(url) {
@@ -2655,12 +2704,9 @@ nameInput.addEventListener("keydown", (e) => {
 
 if (useCloudServerBtn) {
   useCloudServerBtn.addEventListener("click", () => {
-    serverUrlInput.value = "wss://remote-co-viewing.onrender.com/ws";
-    useCloudServerBtn.classList.add("btn-primary");
-    if (useLocalServerBtn) useLocalServerBtn.classList.remove("btn-primary");
-    updateInviteLink();
-    updateServerWarning();
-    connect();
+    if (advancedPanel) advancedPanel.style.display = "block";
+    serverUrlInput.focus();
+    updateInviteGuidance();
   });
 }
 

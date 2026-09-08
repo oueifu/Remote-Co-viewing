@@ -1,4 +1,4 @@
-# Remote Co-viewing (远程同步看视频) `v0.9.0-beta.1 (Experimental Preview)`
+# Remote Co-viewing (远程同步看视频) `v0.9.0-beta.2 (Experimental Preview)`
 
 一个轻量级、高颜值的异地双人协同观影应用。支持两人在专属房间内同步播放进度、发送实时弹幕/聊天、加载本地或网络片源，并通过 WebRTC 直连进行音视频连麦。
 
@@ -19,7 +19,7 @@
 本项目自带原生的 Desktop App（桌面客户端），推荐使用桌面端以获得最佳的跨域权限和本地视频解码体验。
 
 ### Windows 便携版
-从 GitHub Releases 下载 `SyncCinema-v0.9.0-beta.1-win-x64.zip` 后解压，双击根目录的 `SyncCinema.bat` 即可启动；它使用包内 Electron，不需要另行安装 Node.js。该版本是实验性 Beta，建议先在自己的设备上测试。
+从 GitHub Releases 下载 `SyncCinema-v0.9.0-beta.2-win-x64.zip` 后解压，双击根目录的 `SyncCinema.bat` 即可启动；它使用包内 Electron，不需要另行安装 Node.js。该版本是实验性 Beta，建议先在自己的设备上测试。
 
 ### 1. 环境准备
 - 从源码运行时，安装 [Node.js](https://nodejs.org/) 22.12 或更高版本。
@@ -62,9 +62,9 @@ npm run desktop:dev
 
 ### 配置公网地址
 获得公网地址后（例如 `https://my-room.ngrok.app` 或 `wss://my-room.ngrok.app/ws`）：
-1. 在右侧【房间与配置】栏中，将“服务器”输入框的值修改为你的公网地址。
-2. 点击【复制】图标，将生成的邀请链接发给朋友。
-3. 朋友在普通浏览器中打开链接，即可向你发送“敲门”申请。
+1. 展开【房间与配置】→【高级】，点击【配置异地连接】查看软件内提示。
+2. 将“服务器”填写为对应的 `wss://my-room.ngrok.app/ws`，点击【连接】；邀请链接下方变为绿色“可分享链接”后，再点击【复制】。
+3. 朋友在普通浏览器中打开链接，即可向你发送“敲门”申请。显示“本机链接”或“局域网链接”时，请不要把链接发给异地朋友。
 
 *注：局域网内如需直接使用你的局域网 IP（例如 `192.168.1.100:5050`）访问，由于服务端默认仅绑定本地回环 `127.0.0.1`，请在 `.env` 中设置 `BIND_HOST=0.0.0.0`。*
 

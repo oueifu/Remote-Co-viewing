@@ -127,15 +127,20 @@
                     <span id="invite-text" class="invite-text">点击复制邀请链接给好友...</span>
                     <span class="invite-copy" data-i18n="copy">复制</span>
                 </button>
+                <div id="invite-guidance" class="invite-guidance" role="status">
+                    <strong id="invite-guidance-title">本机链接</strong>
+                    <span id="invite-guidance-text">当前链接只在这台电脑上有效。异地邀请请先配置公开 HTTPS/WSS 地址。</span>
+                </div>
                 <div id="advanced-settings-panel" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.08);">
                     <div style="display:flex; gap:6px; margin-bottom:8px;">
-                        <button id="use-cloud-server-btn" type="button" class="btn btn-primary" style="flex:1; font-size:12px; padding:6px 4px;" title="使用公网云端中继，异地好友开网页直接看">🌐 异地公网中继</button>
+                        <button id="use-cloud-server-btn" type="button" class="btn" style="flex:1; font-size:12px; padding:6px 4px;" title="查看异地连接的配置方法">🌐 配置异地连接</button>
                         <button id="use-local-server-btn" type="button" class="btn" style="flex:1; font-size:12px; padding:6px 4px;" title="使用本地服务 (127.0.0.1 / 局域网 / 自建穿透)">🏠 本地自建服务</button>
                     </div>
                     <div class="input-row-group">
-                        <input type="text" id="server-input" class="custom-input" placeholder="服务器地址">
+                        <input type="text" id="server-input" class="custom-input" placeholder="wss://你的公开地址/ws">
                         <button id="connect-btn" type="button" class="btn" data-i18n="connect">连接</button>
                     </div>
+                    <p class="hint" style="margin-top:6px;">异地：用 Tailscale、Cloudflare Tunnel、ngrok 或 cpolar 获取公开 HTTPS 地址，填入对应的 <code>wss://…/ws</code> 后点“连接”，再复制邀请链接。</p>
                     <div class="input-row-group" style="margin-top:6px;">
                         <select id="lang-switch" class="custom-input" aria-label="Language">
                             <option value="zh">🇨🇳 中文</option>
@@ -143,7 +148,7 @@
                             <option value="ja">🇯🇵 日本語</option>
                         </select>
                     </div>
-                    <p id="server-beta-warning" class="hint" style="color: #f59e0b; margin-top: 4px; line-height: 1.4; display: none;">⚠️ 当前连接为作者免费测试服务器，可能存在休眠或限流，建议自行部署以获得最佳体验。</p>
+                    <p id="server-beta-warning" class="hint" style="color: #f59e0b; margin-top: 4px; line-height: 1.4; display: none;">⚠️ 旧的公共演示地址已不可用。请配置自己的 Tailscale、Cloudflare Tunnel、ngrok 或 cpolar 地址。</p>
                 </div>
             </div>
 
