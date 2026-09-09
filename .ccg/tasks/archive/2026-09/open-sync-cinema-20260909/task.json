@@ -1,0 +1,12 @@
+{
+  "id": "open-sync-cinema-20260909",
+  "title": "打开 SyncCinema 本机页面供用户查看",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "local-ui",
+  "currentPhase": "completed",
+  "nextAction": "本机页面已打开",
+  "createdAt": "2026-09-09T00:00:00Z",
+  "branch": "main"
+}
