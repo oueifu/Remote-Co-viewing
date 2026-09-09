@@ -1,4 +1,4 @@
-# Remote Co-viewing (远程同步看视频) `v0.9.0-beta.2 (Experimental Preview)`
+# Remote Co-viewing (远程同步看视频) `v0.9.0-beta.3 (Experimental Preview)`
 
 一个轻量级、高颜值的异地双人协同观影应用。支持两人在专属房间内同步播放进度、发送实时弹幕/聊天、加载本地或网络片源，并通过 WebRTC 直连进行音视频连麦。
 
@@ -19,7 +19,7 @@
 本项目自带原生的 Desktop App（桌面客户端），推荐使用桌面端以获得最佳的跨域权限和本地视频解码体验。
 
 ### Windows 便携版
-从 GitHub Releases 下载 `SyncCinema-v0.9.0-beta.2-win-x64.zip` 后解压，双击根目录的 `SyncCinema.bat` 即可启动；它使用包内 Electron，不需要另行安装 Node.js。该版本是实验性 Beta，建议先在自己的设备上测试。
+从 GitHub Releases 下载 `SyncCinema-v0.9.0-beta.3-win-x64.zip` 后解压，双击根目录的 `SyncCinema.bat` 即可启动；它使用包内 Electron，不需要另行安装 Node.js。该版本是实验性 Beta，建议先在自己的设备上测试。
 
 ### 1. 环境准备
 - 从源码运行时，安装 [Node.js](https://nodejs.org/) 22.12 或更高版本。

@@ -102,11 +102,11 @@ describe("SyncCinema Server & Protocol Test Suite", () => {
   });
 
   describe("Health & Diagnostics Endpoints", () => {
-    it("GET /healthz returns status ok, version 0.9.0-beta.2, and desktop-local mode", async () => {
+    it("GET /healthz returns status ok, version 0.9.0-beta.3, and desktop-local mode", async () => {
       const res = await httpGetJson("/healthz");
       assert.equal(res.status, 200);
       assert.equal(res.data.status, "ok");
-      assert.equal(res.data.version, "0.9.0-beta.2");
+      assert.equal(res.data.version, "0.9.0-beta.3");
       assert.equal(res.data.mode, "desktop-local");
     });
 
@@ -140,7 +140,7 @@ describe("SyncCinema Server & Protocol Test Suite", () => {
       assert.equal(res.status, 200);
       assert.ok(typeof res.data.activeRooms === "number");
       assert.ok(typeof res.data.totalConnections === "number");
-      assert.equal(res.data.version, "0.9.0-beta.2");
+      assert.equal(res.data.version, "0.9.0-beta.3");
     });
 
     it("GET /metrics returns Prometheus formatted plaintext metrics", async () => {

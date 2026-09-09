@@ -55,6 +55,9 @@ const sponsorBtn = $("#sponsor-btn");
 const devtoolsBtn = $("#devtools-btn");
 const sponsorModal = $("#sponsor-modal");
 const sponsorCloseBtn = $("#sponsor-close-btn");
+const remoteSetupModal = $("#remote-setup-modal");
+const remoteSetupCloseBtn = $("#remote-setup-close-btn");
+const remoteSetupFocusBtn = $("#remote-setup-focus-btn");
 const serverBetaWarning = $("#server-beta-warning");
 const inviteGuidance = $("#invite-guidance");
 const inviteGuidanceTitle = $("#invite-guidance-title");
@@ -890,6 +893,21 @@ function showSponsorModal() {
 
 function hideSponsorModal() {
   if (sponsorModal) sponsorModal.style.display = "none";
+}
+
+function showRemoteSetupModal() {
+  if (remoteSetupModal) remoteSetupModal.style.display = "block";
+}
+
+function hideRemoteSetupModal() {
+  if (remoteSetupModal) remoteSetupModal.style.display = "none";
+}
+
+function focusRemoteServerInput() {
+  hideRemoteSetupModal();
+  if (advancedPanel) advancedPanel.style.display = "block";
+  serverUrlInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+  serverUrlInput?.focus();
 }
 
 function generateRoomId() {
@@ -2654,6 +2672,8 @@ if (helpBtn) helpBtn.addEventListener("click", showGuideModal);
 if (guideCloseBtn) guideCloseBtn.addEventListener("click", hideGuideModal);
 if (sponsorBtn) sponsorBtn.addEventListener("click", showSponsorModal);
 if (sponsorCloseBtn) sponsorCloseBtn.addEventListener("click", hideSponsorModal);
+if (remoteSetupCloseBtn) remoteSetupCloseBtn.addEventListener("click", hideRemoteSetupModal);
+if (remoteSetupFocusBtn) remoteSetupFocusBtn.addEventListener("click", focusRemoteServerInput);
 
 if (isDesktopApp && devtoolsBtn) {
   devtoolsBtn.style.display = "flex";
@@ -2704,9 +2724,7 @@ nameInput.addEventListener("keydown", (e) => {
 
 if (useCloudServerBtn) {
   useCloudServerBtn.addEventListener("click", () => {
-    if (advancedPanel) advancedPanel.style.display = "block";
-    serverUrlInput.focus();
-    updateInviteGuidance();
+    showRemoteSetupModal();
   });
 }
 

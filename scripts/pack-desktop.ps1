@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$Version = "0.9.0-beta.2"
+$Version = "0.9.0-beta.3"
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ReleaseDir = Join-Path $ProjectRoot "release"
 $DistName = "SyncCinema-v$Version-win-x64"

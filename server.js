@@ -485,7 +485,7 @@ function getActiveStats() {
     totalMessages: serverStats.totalMessages,
     totalRejectedJoins: serverStats.totalRejectedJoins,
     uptimeSeconds: Math.floor(process.uptime()),
-    version: "0.9.0-beta.2",
+    version: "0.9.0-beta.3",
     mode: isHostedRelay ? "hosted-relay" : "desktop-local"
   };
 }
@@ -522,7 +522,7 @@ function serveStatic(req, res) {
       uptime: Math.floor(process.uptime()),
       rooms: rooms.size,
       mode: isHostedRelay ? "hosted-relay" : "desktop-local",
-      version: "0.9.0-beta.2"
+      version: "0.9.0-beta.3"
     }));
     return;
   }

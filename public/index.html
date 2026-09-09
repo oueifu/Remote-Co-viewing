@@ -35,6 +35,20 @@
             </div>
         </div>
     </div>
+    <div id="remote-setup-modal" style="display:none;position:fixed;inset:0;z-index:1002;background:rgba(0,0,0,.72);padding:24px;">
+        <div style="max-width:560px;margin:10vh auto;background:#111827;color:#fff;padding:28px 32px;border-radius:20px;box-shadow:0 24px 80px rgba(0,0,0,.35);">
+            <h3 style="margin:0 0 16px;font-size:20px;line-height:1.2;">🌐 异地连接设置</h3>
+            <div style="display:grid;gap:12px;margin-bottom:22px;font-size:15px;line-height:1.65;color:#e5e7eb;">
+                <div><strong>1. 获取公开地址</strong><br>使用 Tailscale、Cloudflare Tunnel、ngrok 或 cpolar，将本机的 5050 端口提供给朋友访问。</div>
+                <div><strong>2. 填写服务器地址</strong><br>把获得的 HTTPS 地址改成对应的 <code>wss://你的地址/ws</code>。</div>
+                <div><strong>3. 连接后再复制</strong><br>点击“连接”，看到邀请链接下方变成绿色“可分享链接”后，再发给异地朋友。</div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button id="remote-setup-focus-btn" type="button" class="btn btn-primary">去填写服务器地址</button>
+                <button id="remote-setup-close-btn" type="button" class="btn">关闭</button>
+            </div>
+        </div>
+    </div>
     <div class="app-container">
         <div class="main-content">
             <div class="video-container">
